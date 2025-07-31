@@ -21,5 +21,7 @@ clean:
 	rm -rf lmdb
 
 test: build
+	@echo "Compiling test files..."
+	@erlc -o test test/hb_store_lmdb_test.erl
 	@echo "Running tests..."
 	erl -pa ebin -pa test -noshell -eval "eunit:test(hb_store_lmdb_test, [verbose]), init:stop()."

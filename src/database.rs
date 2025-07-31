@@ -1,6 +1,4 @@
 use lmdb::Database;
-use rustler::ResourceArc;
-use std::sync::Arc;
 
 pub struct DatabaseResource {
     pub db: Database,

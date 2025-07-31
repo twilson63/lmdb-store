@@ -8,7 +8,10 @@ setup() ->
         <<"name">> => <<"test-store">>,
         <<"path">> => <<"./test-lmdb">>
     },
-    ok = hb_store_lmdb:start(StoreOpts),
+    case hb_store_lmdb:start(StoreOpts) of
+        {ok, _EnvRef} -> ok;
+        ok -> ok
+    end,
     StoreOpts.
 
 cleanup(StoreOpts) ->
@@ -148,8 +151,8 @@ benchmark() ->
         WriteEnd = erlang:monotonic_time(),
         WriteTime = erlang:convert_time_unit(WriteEnd - WriteStart, native, microsecond),
         WriteRate = WriteCount * 1000000 / WriteTime,
-        io:format("Write: ~p ops in ~.2f ms (~.0f ops/sec)~n", 
-                  [WriteCount, WriteTime/1000, WriteRate]),
+        io:format("Write: ~p ops in ~p ms (~p ops/sec)~n", 
+                  [WriteCount, round(WriteTime/1000), round(WriteRate)]),
         
         % Read benchmark
         ReadCount = 10000,
@@ -165,8 +168,8 @@ benchmark() ->
         ReadEnd = erlang:monotonic_time(),
         ReadTime = erlang:convert_time_unit(ReadEnd - ReadStart, native, microsecond),
         ReadRate = ReadCount * 1000000 / ReadTime,
-        io:format("Read: ~p ops in ~.2f ms (~.0f ops/sec)~n", 
-                  [ReadCount, ReadTime/1000, ReadRate]),
+        io:format("Read: ~p ops in ~p ms (~p ops/sec)~n", 
+                  [ReadCount, round(ReadTime/1000), round(ReadRate)]),
         
         ?assert(WriteRate > 10000),  % Should handle >10k writes/sec
         ?assert(ReadRate > 50000)    % Should handle >50k reads/sec

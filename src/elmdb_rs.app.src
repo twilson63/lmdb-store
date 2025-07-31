@@ -1,0 +1,13 @@
+{application, elmdb_rs,
+ [{description, "LMDB-based implementation of hb_store using Rust NIFs"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib
+   ]},
+  {env,[]},
+  {modules, [hb_store_lmdb]},
+  {licenses, ["Apache 2.0"]},
+  {links, []}
+ ]}.

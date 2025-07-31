@@ -1,9 +1,8 @@
-use crate::error::{StoreError, StoreResult};
 use serde::{Deserialize, Serialize};
 
-const PATH_SEPARATOR: &str = "/";
-const GROUP_MARKER: &str = "__group__";
-const LINK_MARKER: &str = "__link__";
+pub const PATH_SEPARATOR: &str = "/";
+pub const GROUP_MARKER: &str = "__group__";
+pub const LINK_MARKER: &str = "__link__";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PathType {
@@ -20,6 +19,7 @@ pub fn join_paths(parts: &[String]) -> String {
     parts
         .iter()
         .filter(|p| !p.is_empty())
+        .map(|s| s.as_str())
         .collect::<Vec<_>>()
         .join(PATH_SEPARATOR)
 }

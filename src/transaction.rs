@@ -1,7 +1,4 @@
 use lmdb::{Database, RoTransaction, RwTransaction, Transaction, WriteFlags};
-use rustler::{Binary, OwnedBinary};
-use std::sync::Arc;
-use crate::environment::LmdbEnvironment;
 use crate::error::{StoreError, StoreResult};
 
 pub enum TransactionType<'a> {

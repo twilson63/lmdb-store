@@ -18,7 +18,7 @@
 %%% - <<"max_readers">> - Maximum concurrent readers (default: 126)
 
 -module(hb_store_lmdb).
--behavior(hb_store).
+% -behavior(hb_store).
 
 %% hb_store callbacks
 -export([start/1, stop/1, reset/1]).
@@ -26,6 +26,12 @@
 -export([make_group/2, make_link/3]).
 -export([path/2, add_path/3]).
 -export([scope/1]).
+
+%% Direct LMDB environment functions
+-export([nif_env_open/2, nif_env_close/1, nif_env_get/3, nif_env_put/4]).
+
+%% Initialization
+-export([init/0]).
 
 %% NIF functions
 -on_load(load_nif/0).
@@ -38,26 +44,34 @@
 load_nif() ->
     SoName = case code:priv_dir(?APPNAME) of
         {error, bad_name} ->
-            case filelib:is_dir(filename:join(["..", priv])) of
-                true ->
-                    filename:join(["..", priv, ?LIBNAME]);
+            % In development, look for the priv directory relative to current dir
+            case {filelib:is_file("priv/elmdb_rs.so"), filelib:is_file("priv/elmdb_rs.dylib")} of
+                {true, _} -> "priv/elmdb_rs";
+                {_, true} -> "priv/elmdb_rs";
                 _ ->
-                    filename:join([priv, ?LIBNAME])
+                    case filelib:is_dir(filename:join(["..", priv])) of
+                        true ->
+                            filename:join(["..", priv, ?LIBNAME]);
+                        _ ->
+                            filename:join([priv, ?LIBNAME])
+                    end
             end;
         Dir ->
             filename:join(Dir, ?LIBNAME)
     end,
     erlang:load_nif(SoName, 0).
 
+%%% Public API
+
+%% @doc Initialize the NIF (called automatically on module load).
+init() ->
+    ok.
+
 %%% hb_store behavior implementation
 
 %% @doc Initialize the LMDB store with the given options.
 start(StoreOpts) ->
-    case nif_start(StoreOpts) of
-        ok -> ok;
-        {ok, Instance} -> {ok, Instance};
-        {error, Reason} -> {error, Reason}
-    end.
+    nif_start(StoreOpts).
 
 %% @doc Stop the LMDB store and clean up resources.
 stop(StoreOpts) ->
@@ -175,4 +189,16 @@ nif_path(_StoreOpts, _Path) ->
     erlang:nif_error(nif_not_loaded).
 
 nif_add_path(_StoreOpts, _Path1, _Path2) ->
+    erlang:nif_error(nif_not_loaded).
+
+nif_env_open(_Path, _Opts) ->
+    erlang:nif_error(nif_not_loaded).
+
+nif_env_close(_EnvRef) ->
+    erlang:nif_error(nif_not_loaded).
+
+nif_env_get(_EnvRef, _DbName, _Key) ->
+    erlang:nif_error(nif_not_loaded).
+
+nif_env_put(_EnvRef, _DbName, _Key, _Value) ->
     erlang:nif_error(nif_not_loaded).

@@ -28,7 +28,6 @@ atoms! {
     // Store options
     store_module,
     name,
-    path,
     map_size,
     max_dbs,
     max_readers,

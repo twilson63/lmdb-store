@@ -51,7 +51,6 @@ impl StoreError {
                 lmdb::Error::BadDbi => atoms::invalid(),
                 lmdb::Error::PageNotFound => atoms::not_found(),
                 lmdb::Error::KeyExist => atoms::error(),
-                lmdb::Error::NotFound => atoms::not_found(),
                 _ => atoms::error(),
             },
             StoreError::InvalidPath(_) => atoms::invalid_path(),
