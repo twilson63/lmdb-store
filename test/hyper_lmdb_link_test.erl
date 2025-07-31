@@ -88,7 +88,7 @@ test_link_type_detection(StoreOpts) ->
         % Check types
         ?assertEqual(simple, hyper_lmdb:type(StoreOpts, <<"value_key">>)),
         ?assertEqual(simple, hyper_lmdb:type(StoreOpts, <<"link_key">>)),  % Links resolve to their target type
-        ?assertEqual(simple, hyper_lmdb:type(StoreOpts, <<"group_key">>))
+        ?assertEqual(composite, hyper_lmdb:type(StoreOpts, <<"group_key">>))
      end}.
 
 test_link_overwrite(StoreOpts) ->
