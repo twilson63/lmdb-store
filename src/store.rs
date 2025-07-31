@@ -190,6 +190,13 @@ pub fn read<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>) -> Nif
     
     match txn.get(db, &resolved_key.as_bytes()) {
         Ok(data) => {
+            // Check if we got a link value (which means circular reference or broken link)
+            if let Ok(data_str) = std::str::from_utf8(data) {
+                if data_str.starts_with("@link:") {
+                    // This is a link that couldn't be resolved
+                    return Ok(atoms::not_found().encode(env));
+                }
+            }
             let mut binary = rustler::OwnedBinary::new(data.len()).unwrap();
             binary.as_mut_slice().copy_from_slice(data);
             Ok((atoms::ok(), binary.release(env)).encode(env))
@@ -265,14 +272,13 @@ pub fn get_type<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>) ->
             return Ok((atoms::ok(), atoms::composite()).encode(env));
         }
         
-        // Check if it's a link
-        let link_key = make_link_key(&key_str);
-        if txn.get(db, &link_key.as_bytes()).is_ok() {
-            return Ok((atoms::ok(), atoms::link()).encode(env));
-        }
-        
-        // Check if it's a simple value
-        if txn.get(db, &key_str.as_bytes()).is_ok() {
+        // Check if it's a value (link or simple)
+        if let Ok(value) = txn.get(db, &key_str.as_bytes()) {
+            if let Ok(value_str) = std::str::from_utf8(value) {
+                if value_str.starts_with("@link:") {
+                    return Ok((atoms::ok(), atoms::link()).encode(env));
+                }
+            }
             return Ok((atoms::ok(), atoms::simple()).encode(env));
         }
         
@@ -332,7 +338,7 @@ pub fn list<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, path: Term<'a>) -> Ni
             
             if let Some(child) = extract_child_name(key_str, &prefix) {
                 // Skip internal markers
-                if !child.ends_with(GROUP_MARKER) && !child.ends_with(LINK_MARKER) {
+                if !child.ends_with(GROUP_MARKER) {
                     children.insert(child);
                 }
             }
@@ -403,9 +409,10 @@ pub fn make_link<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, existing: Term<'
             Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
         };
         
-        // Store link target
-        let link_key = make_link_key(&new_str);
-        match txn.put(db, &link_key.as_bytes(), &existing_str.as_bytes(), WriteFlags::empty()) {
+        // Store link target as the value of the new key
+        // Prefix with special marker to identify it as a link
+        let link_value = format!("@link:{}", existing_str);
+        match txn.put(db, &new_str.as_bytes(), &link_value.as_bytes(), WriteFlags::empty()) {
             Ok(_) => {
                 txn.commit().map_err(|e| Error::Term(Box::new(e.to_string())))?;
                 Ok(atoms::ok().encode(env))
@@ -555,7 +562,7 @@ pub fn list_prefix<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, prefix: Term<'
         }
         
         // Skip internal markers (groups and links)
-        if key_str.ends_with(GROUP_MARKER) || key_str.ends_with(LINK_MARKER) {
+        if key_str.ends_with(GROUP_MARKER) {
             continue;
         }
         
@@ -604,21 +611,30 @@ fn resolve_path(lmdb_env: &Arc<LmdbEnvironment>, path: &str) -> String {
     
     loop {
         if visited.contains(&current_path) {
-            // Circular reference
+            // Circular reference detected
             break;
         }
         visited.insert(current_path.clone());
         
-        let link_key = make_link_key(&current_path);
-        match txn.get(db, &link_key.as_bytes()) {
-            Ok(target) => {
-                if let Ok(target_str) = std::str::from_utf8(target) {
-                    current_path = target_str.to_string();
-                } else {
-                    break;
+        // Check if the current path has a value
+        match txn.get(db, &current_path.as_bytes()) {
+            Ok(value) => {
+                if let Ok(value_str) = std::str::from_utf8(value) {
+                    // Check if this is a link
+                    if value_str.starts_with("@link:") {
+                        // Extract the target path
+                        current_path = value_str[6..].to_string();
+                        // Continue following the link
+                        continue;
+                    }
                 }
+                // Not a link or can't parse - this is the final value
+                break;
             }
-            Err(_) => break,
+            Err(_) => {
+                // Key doesn't exist
+                break;
+            }
         }
     }
     
