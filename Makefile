@@ -23,8 +23,9 @@ clean:
 test: build
 	@echo "Compiling test files..."
 	@erlc -o test test/hyper_lmdb_test.erl
+	@erlc -o test test/hyper_lmdb_hb_store_test.erl
 	@echo "Running tests..."
-	erl -pa ebin -pa test -noshell -eval "eunit:test(hyper_lmdb_test, [verbose]), init:stop()."
+	erl -pa ebin -pa test -noshell -eval "hyper_lmdb:init(), eunit:test([hyper_lmdb_test, hyper_lmdb_hb_store_test], [verbose]), init:stop()."
 
 perf: build
 	@echo "Running performance tests..."
