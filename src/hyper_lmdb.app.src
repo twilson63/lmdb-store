@@ -1,0 +1,13 @@
+{application, hyper_lmdb,
+ [{description, "High-performance LMDB store for HyperBEAM using Rust NIFs"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib
+   ]},
+  {env,[]},
+  {modules, [hyper_lmdb]},
+  {licenses, ["Apache 2.0"]},
+  {links, [{"GitHub", "https://github.com/twilson63/lmdb-store"}]}
+ ]}.

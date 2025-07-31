@@ -38,8 +38,8 @@
 %% NIF functions
 -on_load(load_nif/0).
 
--define(APPNAME, elmdb_rs).
--define(LIBNAME, elmdb_rs).
+-define(APPNAME, hyper_lmdb).
+-define(LIBNAME, hyper_lmdb).
 
 %%% NIF loading
 
@@ -47,9 +47,9 @@ load_nif() ->
     SoName = case code:priv_dir(?APPNAME) of
         {error, bad_name} ->
             % In development, look for the priv directory relative to current dir
-            case {filelib:is_file("priv/elmdb_rs.so"), filelib:is_file("priv/elmdb_rs.dylib")} of
-                {true, _} -> "priv/elmdb_rs";
-                {_, true} -> "priv/elmdb_rs";
+            case {filelib:is_file("priv/hyper_lmdb.so"), filelib:is_file("priv/hyper_lmdb.dylib")} of
+                {true, _} -> "priv/hyper_lmdb";
+                {_, true} -> "priv/hyper_lmdb";
                 _ ->
                     case filelib:is_dir(filename:join(["..", priv])) of
                         true ->

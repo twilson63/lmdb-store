@@ -21,7 +21,7 @@ Add `hyper_lmdb` to your `rebar.config` dependencies:
 
 ```erlang
 {deps, [
-    {hyper_lmdb, {git, "https://github.com/yourusername/elmdb-rs.git", {branch, "main"}}}
+    {hyper_lmdb, {git, "https://github.com/twilson63/lmdb-store.git", {branch, "main"}}}
 ]}.
 ```
 
@@ -40,8 +40,8 @@ Prerequisites:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/elmdb-rs.git
-cd elmdb-rs
+git clone https://github.com/twilson63/lmdb-store.git
+cd lmdb-store
 
 # Build the NIF
 make build

@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Build script for elmdb-rs
+# Build script for hyper_lmdb
 
-echo "Building elmdb-rs LMDB NIF..."
+echo "Building hyper_lmdb NIF..."
 
 # Create directories
 mkdir -p priv
@@ -14,9 +14,9 @@ cargo build --release
 
 # Copy the library to priv/
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    cp target/release/libelmdb_rs.dylib priv/elmdb_rs.so
+    cp target/release/libhyper_lmdb.dylib priv/hyper_lmdb.so
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    cp target/release/libelmdb_rs.so priv/elmdb_rs.so
+    cp target/release/libhyper_lmdb.so priv/hyper_lmdb.so
 else
     echo "Unsupported OS type: $OSTYPE"
     exit 1

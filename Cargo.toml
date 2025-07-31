@@ -1,11 +1,11 @@
 [package]
-name = "elmdb_rs"
+name = "hyper_lmdb"
 version = "0.1.0"
 edition = "2021"
-authors = ["elmdb-rs contributors"]
+authors = ["hyper_lmdb contributors"]
 
 [lib]
-name = "elmdb_rs"
+name = "hyper_lmdb"
 crate-type = ["cdylib"]
 
 [dependencies]

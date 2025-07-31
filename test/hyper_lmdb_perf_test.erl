@@ -1,4 +1,4 @@
--module(elmdb_perf_test).
+-module(hyper_lmdb_perf_test).
 -include_lib("eunit/include/eunit.hrl").
 
 %% Performance tests that can be run with eunit
