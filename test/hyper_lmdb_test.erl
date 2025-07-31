@@ -119,9 +119,9 @@ test_type_detection(Store) ->
         ?assertEqual(ok, hyper_lmdb:make_group(Store, <<"group">>)),
         ?assertEqual({ok, composite}, hyper_lmdb:type(Store, <<"group">>)),
         
-        % Test link type
+        % Test link type - should return the type of what it points to
         ?assertEqual(ok, hyper_lmdb:make_link(Store, <<"simple">>, <<"mylink">>)),
-        ?assertEqual({ok, link}, hyper_lmdb:type(Store, <<"mylink">>)),
+        ?assertEqual({ok, simple}, hyper_lmdb:type(Store, <<"mylink">>)),
         
         % Test not found
         ?assertEqual(not_found, hyper_lmdb:type(Store, <<"nonexistent">>))

@@ -244,40 +244,31 @@ pub fn read<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>) -> Nif
         Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
     };
     
-    // Follow link chains
-    let mut current_key = key_str.clone();
-    let mut visited = HashSet::new();
+    // Resolve any links in the path
+    let resolved_key = resolve_path(&lmdb_env, &key_str);
     
-    loop {
-        // Prevent infinite loops
-        if visited.contains(&current_key) {
-            return Ok(atoms::not_found().encode(env));
-        }
-        visited.insert(current_key.clone());
-        
-        match txn.get(db, &current_key.as_bytes()) {
-            Ok(data) => {
-                if let Ok(data_str) = std::str::from_utf8(data) {
-                    if data_str.starts_with("@link:") {
-                        // Follow the link
-                        current_key = data_str[6..].to_string();
-                        continue;
-                    } else if data_str.starts_with("@data:") {
-                        // Regular data - strip the prefix
-                        let actual_data = &data[6..];
-                        let mut binary = rustler::OwnedBinary::new(actual_data.len()).unwrap();
-                        binary.as_mut_slice().copy_from_slice(actual_data);
-                        return Ok((atoms::ok(), binary.release(env)).encode(env));
-                    }
+    match txn.get(db, &resolved_key.as_bytes()) {
+        Ok(data) => {
+            if let Ok(data_str) = std::str::from_utf8(data) {
+                if data_str.starts_with("@link:") {
+                    // If we still have a link after resolution, it means we hit a circular reference
+                    // or a broken link chain
+                    return Ok(atoms::not_found().encode(env));
+                } else if data_str.starts_with("@data:") {
+                    // Regular data - strip the prefix
+                    let actual_data = &data[6..];
+                    let mut binary = rustler::OwnedBinary::new(actual_data.len()).unwrap();
+                    binary.as_mut_slice().copy_from_slice(actual_data);
+                    return Ok((atoms::ok(), binary.release(env)).encode(env));
                 }
-                // Legacy data without prefix
-                let mut binary = rustler::OwnedBinary::new(data.len()).unwrap();
-                binary.as_mut_slice().copy_from_slice(data);
-                return Ok((atoms::ok(), binary.release(env)).encode(env));
             }
-            Err(lmdb::Error::NotFound) => return Ok(atoms::not_found().encode(env)),
-            Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
+            // Legacy data without prefix
+            let mut binary = rustler::OwnedBinary::new(data.len()).unwrap();
+            binary.as_mut_slice().copy_from_slice(data);
+            return Ok((atoms::ok(), binary.release(env)).encode(env));
         }
+        Err(lmdb::Error::NotFound) => return Ok(atoms::not_found().encode(env)),
+        Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
     }
 }
 
@@ -349,22 +340,17 @@ pub fn get_type<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>) ->
             Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
         };
         
+        // Resolve any links in the path
+        let resolved_key = resolve_path(&lmdb_env, &key_str);
+        
         // Check if it's a group
-        let group_key = make_group_key(&key_str);
+        let group_key = make_group_key(&resolved_key);
         if txn.get(db, &group_key.as_bytes()).is_ok() {
             return Ok((atoms::ok(), atoms::composite()).encode(env));
         }
         
-        // Check if it's a value (link or simple)
-        if let Ok(value) = txn.get(db, &key_str.as_bytes()) {
-            if let Ok(value_str) = std::str::from_utf8(value) {
-                if value_str.starts_with("@link:") {
-                    return Ok((atoms::ok(), atoms::link()).encode(env));
-                } else if value_str.starts_with("@data:") {
-                    return Ok((atoms::ok(), atoms::simple()).encode(env));
-                }
-            }
-            // Legacy data without prefix
+        // Check if it's a simple value
+        if txn.get(db, &resolved_key.as_bytes()).is_ok() {
             return Ok((atoms::ok(), atoms::simple()).encode(env));
         }
         
@@ -397,17 +383,20 @@ pub fn list<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, path: Term<'a>) -> Ni
             Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
         };
         
+        // Resolve any links in the path
+        let resolved_path = resolve_path(&lmdb_env, &path_str);
+        
         // Check if path is a group
-        let group_key = make_group_key(&path_str);
+        let group_key = make_group_key(&resolved_path);
         if txn.get(db, &group_key.as_bytes()).is_err() {
             return Ok(atoms::not_found().encode(env));
         }
         
         // List all children
-        let prefix = if path_str.is_empty() {
+        let prefix = if resolved_path.is_empty() {
             String::new()
         } else {
-            format!("{}/", path_str)
+            format!("{}/", resolved_path)
         };
         
         let mut cursor = match txn.open_ro_cursor(db) {

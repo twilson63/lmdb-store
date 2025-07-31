@@ -23,20 +23,20 @@ run(Config) ->
     
     % Setup
     cleanup(Config),
-    {ok, EnvRef} = setup_store(Config),
+    {ok, StoreOpts} = setup_store(Config),
     
     try
         % Run benchmarks
-        bench_sequential_writes(EnvRef, Config),
-        bench_sequential_reads(EnvRef, Config),
-        bench_random_reads(EnvRef, Config),
-        bench_mixed_operations(EnvRef, Config),
-        bench_batch_writes(EnvRef, Config),
-        bench_concurrent_reads(EnvRef, Config),
-        bench_concurrent_mixed(EnvRef, Config),
+        bench_sequential_writes(StoreOpts, Config),
+        bench_sequential_reads(StoreOpts, Config),
+        bench_random_reads(StoreOpts, Config),
+        bench_mixed_operations(StoreOpts, Config),
+        bench_batch_writes(StoreOpts, Config),
+        bench_concurrent_reads(StoreOpts, Config),
+        bench_concurrent_mixed(StoreOpts, Config),
         
         % Size benchmarks
-        bench_various_value_sizes(EnvRef, Config),
+        bench_various_value_sizes(StoreOpts, Config),
         
         io:format("~n=== Benchmark Complete ===~n")
     after
@@ -56,8 +56,8 @@ setup_store(#bench_config{store_name = Name, store_path = Path} = Config) ->
     Result = hyper_lmdb:start(StoreOpts),
     io:format("Store start result: ~p~n", [Result]),
     case Result of
-        {ok, EnvRef} -> {ok, EnvRef};  % Return the environment reference
-        ok -> {ok, StoreOpts};  % Fallback to StoreOpts if no ref returned
+        {ok, _EnvRef} -> {ok, StoreOpts};  % Return the StoreOpts for use in API calls
+        ok -> {ok, StoreOpts};  % Handle if it returns just ok
         Error -> 
             io:format("Failed to start store: ~p~n", [Error]),
             error({failed_to_start_store, Error})

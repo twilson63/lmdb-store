@@ -87,7 +87,7 @@ test_link_type_detection(StoreOpts) ->
         
         % Check types
         ?assertEqual({ok, simple}, hyper_lmdb:type(StoreOpts, <<"value_key">>)),
-        ?assertEqual({ok, link}, hyper_lmdb:type(StoreOpts, <<"link_key">>)),
+        ?assertEqual({ok, simple}, hyper_lmdb:type(StoreOpts, <<"link_key">>)),  % Links resolve to their target type
         ?assertEqual({ok, composite}, hyper_lmdb:type(StoreOpts, <<"group_key">>))
      end}.
 
@@ -120,8 +120,8 @@ test_link_to_nonexistent(StoreOpts) ->
         % Reading should return not_found
         ?assertEqual(not_found, hyper_lmdb:read(StoreOpts, <<"broken_link">>)),
         
-        % But the link itself exists
-        ?assertEqual({ok, link}, hyper_lmdb:type(StoreOpts, <<"broken_link">>))
+        % Type should also return not_found since the target doesn't exist
+        ?assertEqual(not_found, hyper_lmdb:type(StoreOpts, <<"broken_link">>))
      end}.
 
 test_mixed_links_and_values(StoreOpts) ->

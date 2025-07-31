@@ -89,7 +89,7 @@ scope(_StoreOpts) ->
     local.
 
 %% @doc Get the type of value at the given key.
-%% Returns: simple | composite | link
+%% Returns: simple | composite
 type(StoreOpts, Key) ->
     case nif_type(StoreOpts, normalize_key(Key)) of
         {ok, Type} -> {ok, Type};
