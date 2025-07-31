@@ -1,26 +1,42 @@
-# elmdb-rs
+# hyper_lmdb
 
-A high-performance Erlang NIF implementation of LMDB (Lightning Memory-Mapped Database) written in Rust. This library provides a fully-featured key-value store that implements the HyperBEAM `hb_store` behavior, offering exceptional performance, ACID transactions, and hierarchical key organization.
+A high-performance Erlang NIF implementation of LMDB (Lightning Memory-Mapped Database) written in Rust. This library provides a robust key-value store with hierarchical key organization, symbolic links, and built-in security features.
 
 ## Features
 
 - **High Performance**: Zero-copy reads directly from memory-mapped files
 - **ACID Transactions**: Full ACID compliance with MVCC (Multi-Version Concurrency Control)
 - **Hierarchical Keys**: Support for groups (directories) and nested paths
-- **Symbolic Links**: Create links between keys for aliasing
+- **Symbolic Links**: Create links between keys for aliasing and redirection
+- **Security**: Built-in prefix system prevents link injection attacks
 - **Thread Safety**: Safe concurrent access from multiple Erlang processes
 - **Resource Management**: Automatic cleanup with Rust's ownership system
-- **HyperBEAM Compatible**: Implements the complete `hb_store` behavior
+- **Backwards Compatible**: Supports reading legacy data without prefixes
 
-## Building
+## Installation
 
-### Prerequisites
+### Using Rebar3
 
+Add `hyper_lmdb` to your `rebar.config` dependencies:
+
+```erlang
+{deps, [
+    {hyper_lmdb, {git, "https://github.com/yourusername/elmdb-rs.git", {branch, "main"}}}
+]}.
+```
+
+Then run:
+```bash
+rebar3 get-deps
+rebar3 compile
+```
+
+### Manual Build
+
+Prerequisites:
 - Rust toolchain (1.70 or later)
 - Erlang/OTP (24 or later)
 - Make
-
-### Build Steps
 
 ```bash
 # Clone the repository
@@ -34,70 +50,220 @@ make build
 make test
 ```
 
-## Usage
+## API Reference
+
+### Store Management
+
+#### `start(StoreOpts) -> {ok, EnvRef} | {error, Reason}`
+Initialize a new LMDB store instance.
+
+```erlang
+StoreOpts = #{
+    <<"name">> => <<"mystore">>,           % Required: unique identifier
+    <<"path">> => <<"./data/mystore">>,    % Optional: data directory
+    <<"map_size">> => 1073741824,          % Optional: max DB size (1GB)
+    <<"max_dbs">> => 128,                  % Optional: max named databases
+    <<"max_readers">> => 126               % Optional: max concurrent readers
+}.
+```
+
+#### `stop(StoreOpts) -> ok`
+Stop the store and release resources.
+
+#### `reset(StoreOpts) -> ok | {error, Reason}`
+Clear all data from the store (WARNING: destructive operation).
 
 ### Basic Operations
+
+#### `write(StoreOpts, Key, Value) -> ok | not_found`
+Write a key-value pair to the store.
+
+```erlang
+ok = hyper_lmdb:write(StoreOpts, <<"key">>, <<"value">>),
+ok = hyper_lmdb:write(StoreOpts, [<<"users">>, <<"alice">>], <<"data">>).
+```
+
+#### `read(StoreOpts, Key) -> {ok, Value} | not_found`
+Read a value from the store. Automatically resolves links.
+
+```erlang
+{ok, <<"value">>} = hyper_lmdb:read(StoreOpts, <<"key">>).
+```
+
+#### `type(StoreOpts, Key) -> {ok, Type} | not_found`
+Get the type of a key. Returns: `simple`, `composite`, or `link`.
+
+```erlang
+{ok, simple} = hyper_lmdb:type(StoreOpts, <<"file">>),
+{ok, composite} = hyper_lmdb:type(StoreOpts, <<"folder">>),
+{ok, link} = hyper_lmdb:type(StoreOpts, <<"alias">>).
+```
+
+### Hierarchical Organization
+
+#### `make_group(StoreOpts, Path) -> ok | not_found`
+Create a group (directory) at the given path.
+
+```erlang
+ok = hyper_lmdb:make_group(StoreOpts, <<"config">>),
+ok = hyper_lmdb:make_group(StoreOpts, [<<"config">>, <<"database">>]).
+```
+
+#### `list(StoreOpts, Path) -> {ok, Children} | not_found`
+List all direct children of a group.
+
+```erlang
+{ok, Children} = hyper_lmdb:list(StoreOpts, <<"config">>).
+% Children = [<<"database">>, <<"server">>, <<"logging">>]
+```
+
+### Symbolic Links
+
+#### `make_link(StoreOpts, Target, LinkName) -> ok | not_found`
+Create a symbolic link pointing to an existing key.
+
+```erlang
+% Create a link
+ok = hyper_lmdb:write(StoreOpts, <<"config/prod/db">>, <<"prod.example.com">>),
+ok = hyper_lmdb:make_link(StoreOpts, <<"config/prod/db">>, <<"current_db">>),
+
+% Reading the link resolves to the target value
+{ok, <<"prod.example.com">>} = hyper_lmdb:read(StoreOpts, <<"current_db">>).
+```
+
+### Path Operations
+
+#### `path(StoreOpts, Path) -> BinaryPath`
+Normalize a path to its canonical form.
+
+```erlang
+<<"users/alice">> = hyper_lmdb:path(StoreOpts, [<<"users">>, <<"alice">>]).
+```
+
+#### `add_path(StoreOpts, Path1, Path2) -> CombinedPath`
+Combine two paths.
+
+```erlang
+<<"users/alice/settings">> = hyper_lmdb:add_path(StoreOpts, <<"users/alice">>, <<"settings">>).
+```
+
+### Advanced Operations
+
+#### `list_prefix(StoreOpts, Prefix) -> {ok, Keys}`
+#### `list_prefix(StoreOpts, Prefix, Options) -> {ok, Keys} | {ok, Keys, Cursor}`
+List all keys with a given prefix, with optional pagination.
+
+```erlang
+% Simple prefix listing
+{ok, Keys} = hyper_lmdb:list_prefix(StoreOpts, <<"users/">>),
+
+% With pagination
+Options = #{
+    <<"limit">> => 100,              % Max keys to return
+    <<"cursor">> => PreviousCursor,  % Continue from previous query
+    <<"return_cursor">> => true      % Return cursor for next page
+},
+{ok, Keys, NextCursor} = hyper_lmdb:list_prefix(StoreOpts, <<"users/">>, Options).
+```
+
+#### `scope(StoreOpts) -> local`
+Returns the scope of the store (always `local` for LMDB).
+
+## Usage Examples
+
+### Basic Key-Value Operations
 
 ```erlang
 % Initialize store
 StoreOpts = #{
-    <<"store-module">> => hyper_lmdb,
-    <<"name">> => <<"mystore">>,
-    <<"path">> => <<"./data/mystore">>,
-    <<"map_size">> => 1073741824  % 1GB
+    <<"name">> => <<"myapp">>,
+    <<"path">> => <<"./data/myapp">>
 },
-ok = hyper_lmdb:start(StoreOpts),
+{ok, _} = hyper_lmdb:start(StoreOpts),
 
 % Write and read data
-ok = hyper_lmdb:write(StoreOpts, <<"key">>, <<"value">>),
-{ok, <<"value">>} = hyper_lmdb:read(StoreOpts, <<"key">>),
+ok = hyper_lmdb:write(StoreOpts, <<"version">>, <<"1.0.0">>),
+{ok, <<"1.0.0">>} = hyper_lmdb:read(StoreOpts, <<"version">>),
 
 % Clean up
 hyper_lmdb:stop(StoreOpts).
 ```
 
-### Hierarchical Keys and Groups
+### Working with Hierarchical Data
 
 ```erlang
-% Create a group (like a directory)
+% Create organizational structure
 ok = hyper_lmdb:make_group(StoreOpts, <<"users">>),
+ok = hyper_lmdb:make_group(StoreOpts, <<"users/admins">>),
 
-% Write to nested paths
-ok = hyper_lmdb:write(StoreOpts, [<<"users">>, <<"alice">>], <<"Alice Data">>),
-ok = hyper_lmdb:write(StoreOpts, [<<"users">>, <<"bob">>], <<"Bob Data">>),
+% Store user data
+ok = hyper_lmdb:write(StoreOpts, <<"users/alice/email">>, <<"alice@example.com">>),
+ok = hyper_lmdb:write(StoreOpts, <<"users/alice/role">>, <<"developer">>),
+ok = hyper_lmdb:write(StoreOpts, <<"users/admins/bob/email">>, <<"bob@example.com">>),
 
-% List items in a group
+% List all users
 {ok, Users} = hyper_lmdb:list(StoreOpts, <<"users">>),
-% Users = [<<"alice">>, <<"bob">>]
+% Users = [<<"alice">>, <<"admins">>]
 
-% Read from nested path
-{ok, <<"Alice Data">>} = hyper_lmdb:read(StoreOpts, [<<"users">>, <<"alice">>]).
+% List admin users
+{ok, Admins} = hyper_lmdb:list(StoreOpts, <<"users/admins">>),
+% Admins = [<<"bob">>]
 ```
 
-### Symbolic Links
+### Using Symbolic Links
 
 ```erlang
-% Create a link
-ok = hyper_lmdb:write(StoreOpts, <<"users/current">>, <<"Alice">>),
-ok = hyper_lmdb:make_link(StoreOpts, <<"users/current">>, <<"current-user">>),
+% Create environment-specific configurations
+ok = hyper_lmdb:write(StoreOpts, <<"config/dev/api_url">>, <<"http://localhost:8080">>),
+ok = hyper_lmdb:write(StoreOpts, <<"config/prod/api_url">>, <<"https://api.example.com">>),
 
-% Reading through the link resolves to the target
-{ok, <<"Alice">>} = hyper_lmdb:read(StoreOpts, <<"current-user">>).
+% Create a link to current environment
+ok = hyper_lmdb:make_link(StoreOpts, <<"config/dev/api_url">>, <<"current_api">>),
+
+% Application reads from the link
+{ok, <<"http://localhost:8080">>} = hyper_lmdb:read(StoreOpts, <<"current_api">>),
+
+% Switch to production by updating the link
+ok = hyper_lmdb:make_link(StoreOpts, <<"config/prod/api_url">>, <<"current_api">>),
+{ok, <<"https://api.example.com">>} = hyper_lmdb:read(StoreOpts, <<"current_api">>).
 ```
 
-### Type Detection
+### Link Chains and Resolution
 
 ```erlang
-% Check the type of a key
-ok = hyper_lmdb:write(StoreOpts, <<"file">>, <<"data">>),
-{ok, simple} = hyper_lmdb:type(StoreOpts, <<"file">>),
+% Create a chain of links
+ok = hyper_lmdb:write(StoreOpts, <<"data/master">>, <<"primary data">>),
+ok = hyper_lmdb:make_link(StoreOpts, <<"data/master">>, <<"data/current">>),
+ok = hyper_lmdb:make_link(StoreOpts, <<"data/current">>, <<"data/active">>),
+ok = hyper_lmdb:make_link(StoreOpts, <<"data/active">>, <<"data/latest">>),
 
-ok = hyper_lmdb:make_group(StoreOpts, <<"folder">>),
-{ok, composite} = hyper_lmdb:type(StoreOpts, <<"folder">>),
-
-ok = hyper_lmdb:make_link(StoreOpts, <<"file">>, <<"alias">>),
-{ok, link} = hyper_lmdb:type(StoreOpts, <<"alias">>).
+% Reading any link in the chain resolves to the original value
+{ok, <<"primary data">>} = hyper_lmdb:read(StoreOpts, <<"data/latest">>).
 ```
+
+## Security Features
+
+### Link Injection Prevention
+
+The store uses a prefix system to prevent malicious data from being interpreted as links:
+
+```erlang
+% Attempting to store a value that looks like a link
+ok = hyper_lmdb:write(StoreOpts, <<"malicious">>, <<"@link:secret_key">>),
+
+% The value is stored safely and returned as-is
+{ok, <<"@link:secret_key">>} = hyper_lmdb:read(StoreOpts, <<"malicious">>),
+
+% It's not treated as a link
+{ok, simple} = hyper_lmdb:type(StoreOpts, <<"malicious">>).
+```
+
+## Performance Characteristics
+
+- **Write Performance**: >100,000 ops/sec for small values
+- **Read Performance**: >500,000 ops/sec (zero-copy from mmap)
+- **Memory Efficiency**: Uses OS page cache, no double buffering
+- **Scalability**: Linear scaling with CPU cores for reads
 
 ## Configuration Options
 
@@ -109,62 +275,26 @@ ok = hyper_lmdb:make_link(StoreOpts, <<"file">>, <<"alias">>),
 | `<<"max_dbs">>` | integer | 128 | Maximum number of named databases |
 | `<<"max_readers">>` | integer | 126 | Maximum concurrent read transactions |
 
-## Performance
+## Error Handling
 
-The LMDB NIF provides exceptional performance characteristics:
+All functions return either:
+- `ok` or `{ok, Result}` on success
+- `not_found` when a key doesn't exist
+- `{error, Reason}` for other errors
 
-- **Write Performance**: >100,000 ops/sec for small values
-- **Read Performance**: >500,000 ops/sec (zero-copy from mmap)
-- **Scalability**: Linear scaling with CPU cores for reads
-- **Memory Efficiency**: Uses OS page cache, no double buffering
+## Testing
 
-## Architecture
-
-### Rust NIF Structure
-
-```
-src/
-├── lib.rs          # NIF entry points and initialization
-├── atoms.rs        # Erlang atom definitions
-├── environment.rs  # LMDB environment management
-├── database.rs     # Database handle management
-├── transaction.rs  # Transaction wrappers
-├── cursor.rs       # Cursor operations
-├── path_ops.rs     # Path manipulation utilities
-├── error.rs        # Error handling and conversion
-└── store.rs        # Main store implementation
+Run the complete test suite:
+```bash
+make test
 ```
 
-### Key Design Features
-
-1. **Resource Management**: Uses Rust's ownership system to ensure proper cleanup
-2. **Thread Safety**: Multiple Erlang processes can safely access the same store
-3. **Error Recovery**: Automatic retry on transient failures
-4. **Path Resolution**: Automatic link following and path normalization
-
-## Integration with HyperBEAM
-
-This store implements the complete `hb_store` behavior and can be used as a drop-in replacement for other HyperBEAM stores:
-
-```erlang
-% In your HyperBEAM configuration
-Stores = [
-    #{
-        <<"store-module">> => hyper_lmdb,
-        <<"name">> => <<"primary">>,
-        <<"path">> => <<"./data/primary">>,
-        <<"map_size">> => 107374182400  % 100GB
-    }
-],
-hb_opts:set(stores, Stores).
+Run specific test modules:
+```bash
+erl -pa ebin -pa test -noshell -eval "eunit:test(hyper_lmdb_test, [verbose]), init:stop()."
+erl -pa ebin -pa test -noshell -eval "eunit:test(hyper_lmdb_link_test, [verbose]), init:stop()."
+erl -pa ebin -pa test -noshell -eval "eunit:test(hyper_lmdb_prefix_test, [verbose]), init:stop()."
 ```
-
-## Safety and Reliability
-
-- **Crash Safety**: LMDB is fully crash-resistant with no recovery needed
-- **Data Integrity**: Uses checksums and copy-on-write semantics
-- **Resource Limits**: Configurable limits prevent resource exhaustion
-- **Error Handling**: All errors are properly caught and converted to Erlang terms
 
 ## License
 
@@ -173,11 +303,3 @@ This project is licensed under the same terms as HyperBEAM.
 ## Contributing
 
 Contributions are welcome! Please ensure all tests pass and add new tests for any new functionality.
-
-```bash
-# Run tests
-make test
-
-# Run benchmarks
-erl -pa ebin -pa test -noshell -eval "hyper_lmdb_test:benchmark(), init:stop()."
-```
