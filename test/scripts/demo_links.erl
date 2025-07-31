@@ -6,8 +6,7 @@ main(_) ->
     io:format("=== hyper_lmdb Link Feature Demo ===~n~n"),
     
     StoreOpts = #{
-        <<"name">> => <<"demo_store">>,
-        <<"db_path">> => <<"/tmp/demo_lmdb">>
+        <<"name">> => <<"/tmp/demo_lmdb">>
     },
     
     % Cleanup and start

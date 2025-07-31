@@ -4,8 +4,7 @@
 %% Test fixture
 setup() ->
     StoreOpts = #{
-        <<"name">> => <<"list_prefix_test">>,
-        <<"db_path">> => <<"/tmp/elmdb_list_prefix_test">>
+        <<"name">> => <<"/tmp/elmdb_list_prefix_test">>
     },
     os:cmd("rm -rf /tmp/elmdb_list_prefix_test"),
     {ok, Env} = hyper_lmdb:start(StoreOpts),

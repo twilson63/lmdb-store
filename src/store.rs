@@ -85,17 +85,14 @@ fn decode_path(term: Term) -> NifResult<String> {
 pub fn start<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>) -> NifResult<Term<'a>> {
     let opts = parse_store_opts(store_opts)?;
     
-    // Get name for backwards compatibility and internal tracking
+    // The name IS the database path in HyperBEAM convention
     let name = opts.get("name")
         .or_else(|| opts.get("store-module"))
         .ok_or(Error::BadArg)?
         .clone();
     
-    // Use db_path if provided, otherwise use path, otherwise use default
-    let path = opts.get("db_path")
-        .or_else(|| opts.get("path"))
-        .map(|p| PathBuf::from(p))
-        .unwrap_or_else(|| PathBuf::from(format!("./lmdb/{}", name)));
+    // Use name as the path directly
+    let path = PathBuf::from(&name);
     
     // Use capacity if provided, otherwise use map_size, otherwise use default
     let map_size = opts.get("capacity")
