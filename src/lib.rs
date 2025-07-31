@@ -9,7 +9,27 @@ mod error;
 mod path_ops;
 mod store;
 
-rustler::init!("hb_store_lmdb", load = on_load);
+rustler::init!(
+    "hb_store_lmdb",
+    [
+        nif_start,
+        nif_stop,
+        nif_reset,
+        nif_read,
+        nif_write,
+        nif_type,
+        nif_list,
+        nif_make_group,
+        nif_make_link,
+        nif_path,
+        nif_add_path,
+        nif_env_open,
+        nif_env_close,
+        nif_env_get,
+        nif_env_put
+    ],
+    load = on_load
+);
 
 fn on_load(env: Env, _info: Term) -> bool {
     environment::on_load(env)

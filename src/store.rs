@@ -35,13 +35,16 @@ fn parse_store_opts(term: Term) -> NifResult<HashMap<String, String>> {
                 Ok(s) => s,
                 Err(_) => match value.decode::<i64>() {
                     Ok(i) => i.to_string(),
-                    Err(_) => match value.decode::<rustler::Atom>() {
-                        Ok(atom) => {
-                            // Convert atom to string by getting its text representation
-                            // For now, we'll just use the atom name which works for module names
-                            format!("{:?}", atom)
+                    Err(_) => match value.decode::<u64>() {
+                        Ok(u) => u.to_string(),
+                        Err(_) => match value.decode::<rustler::Atom>() {
+                            Ok(atom) => {
+                                // Convert atom to string by getting its text representation
+                                // For now, we'll just use the atom name which works for module names
+                                format!("{:?}", atom)
+                            },
+                            Err(_) => return Err(Error::BadArg),
                         },
-                        Err(_) => return Err(Error::BadArg),
                     },
                 },
             },

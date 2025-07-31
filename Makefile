@@ -25,3 +25,14 @@ test: build
 	@erlc -o test test/hb_store_lmdb_test.erl
 	@echo "Running tests..."
 	erl -pa ebin -pa test -noshell -eval "eunit:test(hb_store_lmdb_test, [verbose]), init:stop()."
+
+perf: build
+	@echo "Running performance tests..."
+	@erlc -o test test/elmdb_perf_test.erl
+	erl -pa ebin -pa test -noshell -eval "eunit:test(elmdb_perf_test, [verbose]), init:stop()."
+
+benchmark: build
+	@./benchmark.sh
+
+benchmark-quick: build
+	@./benchmark.sh --quick
