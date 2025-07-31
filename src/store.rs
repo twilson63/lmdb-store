@@ -488,14 +488,20 @@ pub fn make_link<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, existing: Term<'
             Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
         };
         
+        // Resolve the existing path first to ensure we're not creating a link to a link
+        let resolved_existing = resolve_path(&lmdb_env, &existing_str);
+        
         let mut txn = match lmdb_env.env.begin_rw_txn() {
             Ok(t) => t,
             Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
         };
         
+        // Ensure parent groups exist for the new link path
+        ensure_parent_groups(&lmdb_env, &mut txn, db, &new_str)?;
+        
         // Store link target as the value of the new key
         // Prefix with special marker to identify it as a link
-        let link_value = format!("@link:{}", existing_str);
+        let link_value = format!("@link:{}", resolved_existing);
         match txn.put(db, &new_str.as_bytes(), &link_value.as_bytes(), WriteFlags::empty()) {
             Ok(_) => {
                 txn.commit().map_err(|e| Error::Term(Box::new(e.to_string())))?;
