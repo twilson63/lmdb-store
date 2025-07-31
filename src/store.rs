@@ -508,9 +508,58 @@ pub fn make_link<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, existing: Term<'
     }
 }
 
-pub fn path<'a>(env: RustlerEnv<'a>, _store_opts: Term<'a>, path: Term<'a>) -> NifResult<Term<'a>> {
+pub fn path<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, path: Term<'a>) -> NifResult<Term<'a>> {
     let path_str = decode_path(path)?;
-    Ok(path_str.encode(env))
+    
+    // Try to decode store_opts as an environment resource first
+    let lmdb_env = if let Ok(resource) = store_opts.decode::<ResourceArc<EnvironmentResource>>() {
+        resource.0.clone()
+    } else {
+        // Fall back to parsing store_opts and looking up by name
+        let opts = parse_store_opts(store_opts)?;
+        let name = opts.get("name")
+            .ok_or(Error::BadArg)?;
+        
+        // Get the canonical key for environment lookup
+        let key = get_canonical_key(name);
+        
+        let envs = ENVIRONMENTS.read();
+        match envs.get(&key).cloned() {
+            Some(env) => env,
+            None => {
+                // If environment not found, just return the path as-is
+                return Ok(path_str.encode(env));
+            }
+        }
+    };
+    
+    // Resolve any links in the path
+    let resolved_path = resolve_path(&lmdb_env, &path_str);
+    
+    // Check if the resolved path exists
+    let db = match lmdb_env.get_or_create_db(None) {
+        Ok(db) => db,
+        Err(_) => return Ok(path_str.encode(env)),
+    };
+    
+    let txn = match lmdb_env.env.begin_ro_txn() {
+        Ok(t) => t,
+        Err(_) => return Ok(path_str.encode(env)),
+    };
+    
+    // Check if it exists as a value or group
+    if txn.get(db, &resolved_path.as_bytes()).is_ok() {
+        return Ok(resolved_path.encode(env));
+    }
+    
+    // Check if it exists as a group
+    let group_key = make_group_key(&resolved_path);
+    if txn.get(db, &group_key.as_bytes()).is_ok() {
+        return Ok(resolved_path.encode(env));
+    }
+    
+    // Path doesn't exist
+    Ok(atoms::not_found().encode(env))
 }
 
 pub fn add_path<'a>(env: RustlerEnv<'a>, _store_opts: Term<'a>, path1: Term<'a>, path2: Term<'a>) -> NifResult<Term<'a>> {
