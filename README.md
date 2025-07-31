@@ -60,8 +60,8 @@ Initialize a new LMDB store instance.
 ```erlang
 StoreOpts = #{
     <<"name">> => <<"mystore">>,           % Required: unique identifier
-    <<"path">> => <<"./data/mystore">>,    % Optional: data directory
-    <<"map_size">> => 1073741824,          % Optional: max DB size (1GB)
+    <<"db_path">> => <<"./data/mystore">>, % Optional: database directory path
+    <<"capacity">> => 1073741824,          % Optional: max DB size in bytes (1GB)
     <<"max_dbs">> => 128,                  % Optional: max named databases
     <<"max_readers">> => 126               % Optional: max concurrent readers
 }.
@@ -177,7 +177,7 @@ Returns the scope of the store (always `local` for LMDB).
 % Initialize store
 StoreOpts = #{
     <<"name">> => <<"myapp">>,
-    <<"path">> => <<"./data/myapp">>
+    <<"db_path">> => <<"./data/myapp">>
 },
 {ok, _} = hyper_lmdb:start(StoreOpts),
 
@@ -270,10 +270,12 @@ ok = hyper_lmdb:write(StoreOpts, <<"malicious">>, <<"@link:secret_key">>),
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `<<"name">>` | binary | required | Unique identifier for the store instance |
-| `<<"path">>` | binary | `"./lmdb/{name}"` | Directory path for database files |
-| `<<"map_size">>` | integer | 10737418240 (10GB) | Maximum database size in bytes |
+| `<<"db_path">>` | binary | `"./lmdb/{name}"` | Directory path for database files |
+| `<<"capacity">>` | integer | 10737418240 (10GB) | Maximum database size in bytes |
 | `<<"max_dbs">>` | integer | 128 | Maximum number of named databases |
 | `<<"max_readers">>` | integer | 126 | Maximum concurrent read transactions |
+
+**Note**: For backwards compatibility, `<<"path">>` can be used instead of `<<"db_path">>`, and `<<"map_size">>` can be used instead of `<<"capacity">>`.
 
 ## Error Handling
 

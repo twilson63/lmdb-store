@@ -6,7 +6,7 @@ setup() ->
     StoreOpts = #{
         <<"store-module">> => hyper_lmdb,
         <<"name">> => <<"prefix-test-store">>,
-        <<"path">> => <<"./test-prefix-lmdb">>
+        <<"db_path">> => <<"./test-prefix-lmdb">>
     },
     case hyper_lmdb:start(StoreOpts) of
         {ok, _EnvRef} -> ok;

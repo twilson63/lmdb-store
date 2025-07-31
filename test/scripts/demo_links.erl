@@ -7,7 +7,7 @@ main(_) ->
     
     StoreOpts = #{
         <<"name">> => <<"demo_store">>,
-        <<"path">> => <<"/tmp/demo_lmdb">>
+        <<"db_path">> => <<"/tmp/demo_lmdb">>
     },
     
     % Cleanup and start

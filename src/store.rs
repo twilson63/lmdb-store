@@ -85,16 +85,21 @@ fn decode_path(term: Term) -> NifResult<String> {
 pub fn start<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>) -> NifResult<Term<'a>> {
     let opts = parse_store_opts(store_opts)?;
     
+    // Get name for backwards compatibility and internal tracking
     let name = opts.get("name")
         .or_else(|| opts.get("store-module"))
         .ok_or(Error::BadArg)?
         .clone();
     
-    let path = opts.get("path")
+    // Use db_path if provided, otherwise use path, otherwise use default
+    let path = opts.get("db_path")
+        .or_else(|| opts.get("path"))
         .map(|p| PathBuf::from(p))
         .unwrap_or_else(|| PathBuf::from(format!("./lmdb/{}", name)));
     
-    let map_size = opts.get("map_size")
+    // Use capacity if provided, otherwise use map_size, otherwise use default
+    let map_size = opts.get("capacity")
+        .or_else(|| opts.get("map_size"))
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(10 * 1024 * 1024 * 1024); // 10GB default
     
