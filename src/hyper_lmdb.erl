@@ -24,7 +24,7 @@
 -export([start/1, stop/1, reset/1]).
 -export([type/2, read/2, write/3, list/2]).
 -export([make_group/2, make_link/3]).
--export([path/2, add_path/3]).
+-export([path/2, add_path/3, resolve/2]).
 
 %% Extended API
 -export([list_prefix/2, list_prefix/3]).
@@ -139,10 +139,13 @@ make_link(StoreOpts, Existing, New) ->
     end.
 
 %% @doc Transform a path into canonical form.
+%% For hyper_lmdb, this resolves links and returns the canonical path.
+%% Returns not_found if the path doesn't exist.
 path(StoreOpts, Path) ->
     nif_path(StoreOpts, normalize_key(Path)).
 
 %% @doc Add two path components together.
+%% For hyper_lmdb, this concatenates paths with "/" separator.
 add_path(StoreOpts, Path1, Path2) ->
     nif_add_path(StoreOpts, normalize_key(Path1), normalize_key(Path2)).
 
@@ -157,6 +160,19 @@ list_prefix(StoreOpts, Prefix) ->
 %%   - return_cursor: Return a cursor for pagination
 list_prefix(StoreOpts, Prefix, Opts) ->
     nif_list_prefix(StoreOpts, normalize_key(Prefix), Opts).
+
+%% @doc Resolve a path by following any symbolic links.
+%% This function resolves link chains in paths, similar to filesystem symlink resolution.
+%% @param StoreOpts Database configuration map
+%% @param Path The path to resolve (binary or list)
+%% @returns The resolved path as a binary
+-spec resolve(map(), binary() | list()) -> binary() | not_found.
+resolve(StoreOpts, Path) ->
+    case nif_resolve(StoreOpts, normalize_key(Path)) of
+        {ok, ResolvedPath} -> ResolvedPath;
+        not_found -> not_found;
+        {error, _} -> not_found
+    end.
 
 %%% Helper functions
 
@@ -203,6 +219,9 @@ nif_path(_StoreOpts, _Path) ->
     erlang:nif_error(nif_not_loaded).
 
 nif_add_path(_StoreOpts, _Path1, _Path2) ->
+    erlang:nif_error(nif_not_loaded).
+
+nif_resolve(_StoreOpts, _Path) ->
     erlang:nif_error(nif_not_loaded).
 
 nif_list_prefix(_StoreOpts, _Prefix, _Opts) ->

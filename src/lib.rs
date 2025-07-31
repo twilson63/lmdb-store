@@ -23,6 +23,7 @@ rustler::init!(
         nif_make_link,
         nif_path,
         nif_add_path,
+        nif_resolve,
         nif_list_prefix
     ],
     load = on_load
@@ -85,6 +86,11 @@ fn nif_path<'a>(env: Env<'a>, store_opts: Term<'a>, path: Term<'a>) -> NifResult
 #[rustler::nif]
 fn nif_add_path<'a>(env: Env<'a>, store_opts: Term<'a>, path1: Term<'a>, path2: Term<'a>) -> NifResult<Term<'a>> {
     store::add_path(env, store_opts, path1, path2)
+}
+
+#[rustler::nif]
+fn nif_resolve<'a>(env: Env<'a>, store_opts: Term<'a>, path: Term<'a>) -> NifResult<Term<'a>> {
+    store::resolve(env, store_opts, path)
 }
 
 #[rustler::nif]
