@@ -182,36 +182,45 @@ pub fn read<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>) -> Nif
         Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
     };
     
-    // Resolve links if necessary
-    let resolved_key = resolve_path(&lmdb_env, &key_str);
-    
     let txn = match lmdb_env.env.begin_ro_txn() {
         Ok(t) => t,
         Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
     };
     
-    match txn.get(db, &resolved_key.as_bytes()) {
-        Ok(data) => {
-            // Check the prefix to determine data type
-            if let Ok(data_str) = std::str::from_utf8(data) {
-                if data_str.starts_with("@link:") {
-                    // This is a link that couldn't be resolved
-                    return Ok(atoms::not_found().encode(env));
-                } else if data_str.starts_with("@data:") {
-                    // Regular data - strip the prefix
-                    let actual_data = &data[6..]; // Skip "@data:"
-                    let mut binary = rustler::OwnedBinary::new(actual_data.len()).unwrap();
-                    binary.as_mut_slice().copy_from_slice(actual_data);
-                    return Ok((atoms::ok(), binary.release(env)).encode(env));
-                }
-            }
-            // Legacy data without prefix (for backwards compatibility)
-            let mut binary = rustler::OwnedBinary::new(data.len()).unwrap();
-            binary.as_mut_slice().copy_from_slice(data);
-            Ok((atoms::ok(), binary.release(env)).encode(env))
+    // Follow link chains
+    let mut current_key = key_str.clone();
+    let mut visited = HashSet::new();
+    
+    loop {
+        // Prevent infinite loops
+        if visited.contains(&current_key) {
+            return Ok(atoms::not_found().encode(env));
         }
-        Err(lmdb::Error::NotFound) => Ok(atoms::not_found().encode(env)),
-        Err(e) => Ok((atoms::error(), e.to_string()).encode(env)),
+        visited.insert(current_key.clone());
+        
+        match txn.get(db, &current_key.as_bytes()) {
+            Ok(data) => {
+                if let Ok(data_str) = std::str::from_utf8(data) {
+                    if data_str.starts_with("@link:") {
+                        // Follow the link
+                        current_key = data_str[6..].to_string();
+                        continue;
+                    } else if data_str.starts_with("@data:") {
+                        // Regular data - strip the prefix
+                        let actual_data = &data[6..];
+                        let mut binary = rustler::OwnedBinary::new(actual_data.len()).unwrap();
+                        binary.as_mut_slice().copy_from_slice(actual_data);
+                        return Ok((atoms::ok(), binary.release(env)).encode(env));
+                    }
+                }
+                // Legacy data without prefix
+                let mut binary = rustler::OwnedBinary::new(data.len()).unwrap();
+                binary.as_mut_slice().copy_from_slice(data);
+                return Ok((atoms::ok(), binary.release(env)).encode(env));
+            }
+            Err(lmdb::Error::NotFound) => return Ok(atoms::not_found().encode(env)),
+            Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
+        }
     }
 }
 
