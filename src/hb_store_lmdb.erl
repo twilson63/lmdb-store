@@ -27,8 +27,7 @@
 -export([path/2, add_path/3]).
 -export([scope/1]).
 
-%% Direct LMDB environment functions
--export([nif_env_open/2, nif_env_close/1, nif_env_get/3, nif_env_put/4]).
+%% Direct LMDB environment functions removed - use store API instead
 
 %% Initialization
 -export([init/0]).
@@ -191,14 +190,4 @@ nif_path(_StoreOpts, _Path) ->
 nif_add_path(_StoreOpts, _Path1, _Path2) ->
     erlang:nif_error(nif_not_loaded).
 
-nif_env_open(_Path, _Opts) ->
-    erlang:nif_error(nif_not_loaded).
-
-nif_env_close(_EnvRef) ->
-    erlang:nif_error(nif_not_loaded).
-
-nif_env_get(_EnvRef, _DbName, _Key) ->
-    erlang:nif_error(nif_not_loaded).
-
-nif_env_put(_EnvRef, _DbName, _Key, _Value) ->
-    erlang:nif_error(nif_not_loaded).
+%% Direct environment NIFs removed - use store API instead

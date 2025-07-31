@@ -22,11 +22,7 @@ rustler::init!(
         nif_make_group,
         nif_make_link,
         nif_path,
-        nif_add_path,
-        nif_env_open,
-        nif_env_close,
-        nif_env_get,
-        nif_env_put
+        nif_add_path
     ],
     load = on_load
 );
@@ -90,22 +86,4 @@ fn nif_add_path<'a>(env: Env<'a>, store_opts: Term<'a>, path1: Term<'a>, path2: 
     store::add_path(env, store_opts, path1, path2)
 }
 
-#[rustler::nif]
-fn nif_env_open<'a>(env: Env<'a>, path: Term<'a>, opts: Term<'a>) -> NifResult<Term<'a>> {
-    environment::env_open(env, path, opts)
-}
-
-#[rustler::nif]
-fn nif_env_close<'a>(env: Env<'a>, env_resource: Term<'a>) -> NifResult<Term<'a>> {
-    environment::env_close(env, env_resource)
-}
-
-#[rustler::nif]
-fn nif_env_get<'a>(env: Env<'a>, env_resource: Term<'a>, db_name: Term<'a>, key: Term<'a>) -> NifResult<Term<'a>> {
-    environment::env_get(env, env_resource, db_name, key)
-}
-
-#[rustler::nif]
-fn nif_env_put<'a>(env: Env<'a>, env_resource: Term<'a>, db_name: Term<'a>, key: Term<'a>, value: Term<'a>) -> NifResult<Term<'a>> {
-    environment::env_put(env, env_resource, db_name, key, value)
-}
+// Direct environment functions removed - use store API instead
