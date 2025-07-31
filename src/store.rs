@@ -190,13 +190,20 @@ pub fn read<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>) -> Nif
     
     match txn.get(db, &resolved_key.as_bytes()) {
         Ok(data) => {
-            // Check if we got a link value (which means circular reference or broken link)
+            // Check the prefix to determine data type
             if let Ok(data_str) = std::str::from_utf8(data) {
                 if data_str.starts_with("@link:") {
                     // This is a link that couldn't be resolved
                     return Ok(atoms::not_found().encode(env));
+                } else if data_str.starts_with("@data:") {
+                    // Regular data - strip the prefix
+                    let actual_data = &data[6..]; // Skip "@data:"
+                    let mut binary = rustler::OwnedBinary::new(actual_data.len()).unwrap();
+                    binary.as_mut_slice().copy_from_slice(actual_data);
+                    return Ok((atoms::ok(), binary.release(env)).encode(env));
                 }
             }
+            // Legacy data without prefix (for backwards compatibility)
             let mut binary = rustler::OwnedBinary::new(data.len()).unwrap();
             binary.as_mut_slice().copy_from_slice(data);
             Ok((atoms::ok(), binary.release(env)).encode(env))
@@ -237,7 +244,10 @@ pub fn write<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>, value
     // Ensure parent groups exist
     ensure_parent_groups(&lmdb_env, &mut txn, db, &key_str)?;
     
-    match txn.put(db, &key_str.as_bytes(), &value_bin.as_slice(), WriteFlags::empty()) {
+    // Prefix the value with @data: to distinguish from links
+    let prefixed_value = [b"@data:", value_bin.as_slice()].concat();
+    
+    match txn.put(db, &key_str.as_bytes(), &prefixed_value, WriteFlags::empty()) {
         Ok(_) => {
             txn.commit().map_err(|e| Error::Term(Box::new(e.to_string())))?;
             Ok(atoms::ok().encode(env))
@@ -277,8 +287,11 @@ pub fn get_type<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>) ->
             if let Ok(value_str) = std::str::from_utf8(value) {
                 if value_str.starts_with("@link:") {
                     return Ok((atoms::ok(), atoms::link()).encode(env));
+                } else if value_str.starts_with("@data:") {
+                    return Ok((atoms::ok(), atoms::simple()).encode(env));
                 }
             }
+            // Legacy data without prefix
             return Ok((atoms::ok(), atoms::simple()).encode(env));
         }
         
