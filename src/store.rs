@@ -14,6 +14,38 @@ use crate::path_ops::*;
 static ENVIRONMENTS: Lazy<RwLock<HashMap<String, Arc<LmdbEnvironment>>>> = 
     Lazy::new(|| RwLock::new(HashMap::new()));
 
+// Helper function to get a canonical key for environment lookup
+fn get_canonical_key(name: &str) -> String {
+    let path = PathBuf::from(name);
+    
+    // First, make the path absolute if it's not already
+    let abs_path = if path.is_absolute() {
+        path
+    } else {
+        match std::env::current_dir() {
+            Ok(cwd) => cwd.join(&path),
+            Err(_) => path,
+        }
+    };
+    
+    // Normalize the path by removing . and .. components
+    // This gives us a consistent key regardless of whether the path exists
+    use std::path::Component;
+    let mut normalized = PathBuf::new();
+    for component in abs_path.components() {
+        match component {
+            Component::CurDir => {} // Skip "."
+            Component::ParentDir => {
+                // Remove the last component for ".."
+                normalized.pop();
+            }
+            component => normalized.push(component),
+        }
+    }
+    
+    normalized.to_string_lossy().to_string()
+}
+
 // Helper to extract store options from Erlang term
 fn parse_store_opts(term: Term) -> NifResult<HashMap<String, String>> {
     let mut opts = HashMap::new();
@@ -94,6 +126,9 @@ pub fn start<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>) -> NifResult<Term<'a
     // Use name as the path directly
     let path = PathBuf::from(&name);
     
+    // Get the canonical key for environment lookup
+    let key = get_canonical_key(&name);
+    
     // Use capacity if provided, otherwise use map_size, otherwise use default
     let map_size = opts.get("capacity")
         .or_else(|| opts.get("map_size"))
@@ -108,10 +143,11 @@ pub fn start<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>) -> NifResult<Term<'a
         .and_then(|s| s.parse::<u32>().ok())
         .unwrap_or(126);
     
-    // Check if environment already exists
+    // Check if environment already exists using the canonical key
     {
         let envs = ENVIRONMENTS.read();
-        if let Some(existing_env) = envs.get(&name) {
+        if let Some(existing_env) = envs.get(&key) {
+            // Environment already exists, return it
             let resource = ResourceArc::new(EnvironmentResource(existing_env.clone()));
             return Ok((atoms::ok(), resource).encode(env));
         }
@@ -121,14 +157,27 @@ pub fn start<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>) -> NifResult<Term<'a
     match LmdbEnvironment::new(&path, map_size, max_dbs, max_readers) {
         Ok(lmdb_env) => {
             let arc_env = Arc::new(lmdb_env);
-            ENVIRONMENTS.write().insert(name.clone(), arc_env.clone());
+            
+            // Insert with the canonical key to ensure idempotency
+            ENVIRONMENTS.write().insert(key, arc_env.clone());
             
             // Return the environment resource
             let resource = ResourceArc::new(EnvironmentResource(arc_env));
             Ok((atoms::ok(), resource).encode(env))
         }
         Err(e) => {
-            Ok((atoms::error(), e.to_string()).encode(env))
+            // Check if error is about the environment already being open
+            let error_str = e.to_string();
+            if error_str.contains("Environment already open") || 
+               error_str.contains("Device or resource busy") {
+                // This might happen in a race condition, try to get it from the map again
+                let envs = ENVIRONMENTS.read();
+                if let Some(existing_env) = envs.get(&key) {
+                    let resource = ResourceArc::new(EnvironmentResource(existing_env.clone()));
+                    return Ok((atoms::ok(), resource).encode(env));
+                }
+            }
+            Ok((atoms::error(), format!("store_start_failed: hyper_lmdb, {}, LMDB error: {}", name, error_str)).encode(env))
         }
     }
 }
@@ -139,7 +188,10 @@ pub fn stop<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>) -> NifResult<Term<'a>
         .or_else(|| opts.get("store-module"))
         .ok_or(Error::BadArg)?;
     
-    ENVIRONMENTS.write().remove(name);
+    // Get the canonical key for environment lookup
+    let key = get_canonical_key(name);
+    
+    ENVIRONMENTS.write().remove(&key);
     Ok(atoms::ok().encode(env))
 }
 
@@ -149,8 +201,11 @@ pub fn reset<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>) -> NifResult<Term<'a
         .or_else(|| opts.get("store-module"))
         .ok_or(Error::BadArg)?;
     
+    // Get the canonical key for environment lookup
+    let key = get_canonical_key(name);
+    
     let envs = ENVIRONMENTS.read();
-    if let Some(lmdb_env) = envs.get(name) {
+    if let Some(lmdb_env) = envs.get(&key) {
         match lmdb_env.reset() {
             Ok(_) => Ok(atoms::ok().encode(env)),
             Err(e) => Ok((atoms::error(), e.to_string()).encode(env)),
@@ -170,11 +225,13 @@ pub fn read<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>) -> Nif
         // Fall back to parsing store_opts and looking up by name
         let opts = parse_store_opts(store_opts)?;
         let name = opts.get("name")
-            .or_else(|| opts.get("store-module"))
             .ok_or(Error::BadArg)?;
         
+        // Get the canonical key for environment lookup
+        let key = get_canonical_key(name);
+        
         let envs = ENVIRONMENTS.read();
-        envs.get(name).cloned().ok_or(Error::BadArg)?
+        envs.get(&key).cloned().ok_or(Error::BadArg)?
     };
     
     let db = match lmdb_env.get_or_create_db(None) {
@@ -235,11 +292,13 @@ pub fn write<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>, value
         // Fall back to parsing store_opts and looking up by name
         let opts = parse_store_opts(store_opts)?;
         let name = opts.get("name")
-            .or_else(|| opts.get("store-module"))
             .ok_or(Error::BadArg)?;
         
+        // Get the canonical key for environment lookup
+        let key = get_canonical_key(name);
+        
         let envs = ENVIRONMENTS.read();
-        envs.get(name).cloned().ok_or(Error::BadArg)?
+        envs.get(&key).cloned().ok_or(Error::BadArg)?
     };
     
     let db = match lmdb_env.get_or_create_db(None) {
@@ -275,8 +334,11 @@ pub fn get_type<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>) ->
     
     let key_str = decode_path(key)?;
     
+    // Get the canonical key for environment lookup
+    let lookup_key = get_canonical_key(name);
+    
     let envs = ENVIRONMENTS.read();
-    if let Some(lmdb_env) = envs.get(name) {
+    if let Some(lmdb_env) = envs.get(&lookup_key) {
         let db = match lmdb_env.get_or_create_db(None) {
             Ok(db) => db,
             Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
@@ -320,8 +382,11 @@ pub fn list<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, path: Term<'a>) -> Ni
     
     let path_str = decode_path(path)?;
     
+    // Get the canonical key for environment lookup
+    let key = get_canonical_key(name);
+    
     let envs = ENVIRONMENTS.read();
-    if let Some(lmdb_env) = envs.get(name) {
+    if let Some(lmdb_env) = envs.get(&key) {
         let db = match lmdb_env.get_or_create_db(None) {
             Ok(db) => db,
             Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
@@ -383,8 +448,11 @@ pub fn make_group<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, path: Term<'a>)
     
     let path_str = decode_path(path)?;
     
+    // Get the canonical key for environment lookup
+    let key = get_canonical_key(name);
+    
     let envs = ENVIRONMENTS.read();
-    if let Some(lmdb_env) = envs.get(name) {
+    if let Some(lmdb_env) = envs.get(&key) {
         let db = match lmdb_env.get_or_create_db(None) {
             Ok(db) => db,
             Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
@@ -421,8 +489,11 @@ pub fn make_link<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, existing: Term<'
     let existing_str = decode_path(existing)?;
     let new_str = decode_path(new)?;
     
+    // Get the canonical key for environment lookup
+    let key = get_canonical_key(name);
+    
     let envs = ENVIRONMENTS.read();
-    if let Some(lmdb_env) = envs.get(name) {
+    if let Some(lmdb_env) = envs.get(&key) {
         let db = match lmdb_env.get_or_create_db(None) {
             Ok(db) => db,
             Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
