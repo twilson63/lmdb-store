@@ -45,7 +45,7 @@ main(_) ->
         % Additional tests
         io:format("~n5. Testing type resolution through link...~n"),
         case hyper_lmdb:type(StoreOpts, [<<"test-link">>, <<"test-file">>]) of
-            {ok, simple} ->
+            simple ->
                 io:format("   ✓ Type correctly resolved as 'simple' through link~n");
             TypeResult ->
                 io:format("   ✗ Type resolution failed: ~p~n", [TypeResult])

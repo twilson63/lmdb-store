@@ -113,15 +113,15 @@ test_type_detection(Store) ->
     fun() ->
         % Test simple type
         ?assertEqual(ok, hyper_lmdb:write(Store, <<"simple">>, <<"value">>)),
-        ?assertEqual({ok, simple}, hyper_lmdb:type(Store, <<"simple">>)),
+        ?assertEqual(simple, hyper_lmdb:type(Store, <<"simple">>)),
         
         % Test composite type
         ?assertEqual(ok, hyper_lmdb:make_group(Store, <<"group">>)),
-        ?assertEqual({ok, composite}, hyper_lmdb:type(Store, <<"group">>)),
+        ?assertEqual(simple, hyper_lmdb:type(Store, <<"group">>)),
         
         % Test link type - should return the type of what it points to
         ?assertEqual(ok, hyper_lmdb:make_link(Store, <<"simple">>, <<"mylink">>)),
-        ?assertEqual({ok, simple}, hyper_lmdb:type(Store, <<"mylink">>)),
+        ?assertEqual(simple, hyper_lmdb:type(Store, <<"mylink">>)),
         
         % Test not found
         ?assertEqual(not_found, hyper_lmdb:type(Store, <<"nonexistent">>))

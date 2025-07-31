@@ -68,7 +68,7 @@ test_security_no_link_injection(StoreOpts) ->
         ?assertEqual(not_found, hyper_lmdb:read(StoreOpts, <<"nested">>)),
         
         % Type should be simple, not link
-        ?assertEqual({ok, simple}, hyper_lmdb:type(StoreOpts, <<"mal1">>))
+        ?assertEqual(simple, hyper_lmdb:type(StoreOpts, <<"mal1">>))
      end}.
 
 test_link_prefix_preserved(StoreOpts) ->
@@ -86,9 +86,9 @@ test_link_prefix_preserved(StoreOpts) ->
         ?assertEqual({ok, <<"target_value">>}, hyper_lmdb:read(StoreOpts, <<"link2">>)),
         
         % Types should be correct - links resolve to their target type
-        ?assertEqual({ok, simple}, hyper_lmdb:type(StoreOpts, <<"real_target">>)),
-        ?assertEqual({ok, simple}, hyper_lmdb:type(StoreOpts, <<"link1">>)),
-        ?assertEqual({ok, simple}, hyper_lmdb:type(StoreOpts, <<"link2">>))
+        ?assertEqual(simple, hyper_lmdb:type(StoreOpts, <<"real_target">>)),
+        ?assertEqual(simple, hyper_lmdb:type(StoreOpts, <<"link1">>)),
+        ?assertEqual(simple, hyper_lmdb:type(StoreOpts, <<"link2">>))
      end}.
 
 test_backwards_compatibility(StoreOpts) ->

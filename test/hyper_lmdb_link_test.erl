@@ -86,9 +86,9 @@ test_link_type_detection(StoreOpts) ->
         ok = hyper_lmdb:make_group(StoreOpts, <<"group_key">>),
         
         % Check types
-        ?assertEqual({ok, simple}, hyper_lmdb:type(StoreOpts, <<"value_key">>)),
-        ?assertEqual({ok, simple}, hyper_lmdb:type(StoreOpts, <<"link_key">>)),  % Links resolve to their target type
-        ?assertEqual({ok, composite}, hyper_lmdb:type(StoreOpts, <<"group_key">>))
+        ?assertEqual(simple, hyper_lmdb:type(StoreOpts, <<"value_key">>)),
+        ?assertEqual(simple, hyper_lmdb:type(StoreOpts, <<"link_key">>)),  % Links resolve to their target type
+        ?assertEqual(simple, hyper_lmdb:type(StoreOpts, <<"group_key">>))
      end}.
 
 test_link_overwrite(StoreOpts) ->
@@ -108,7 +108,7 @@ test_link_overwrite(StoreOpts) ->
         % Overwrite link with a regular value
         ok = hyper_lmdb:write(StoreOpts, <<"mylink">>, <<"direct_value">>),
         ?assertEqual({ok, <<"direct_value">>}, hyper_lmdb:read(StoreOpts, <<"mylink">>)),
-        ?assertEqual({ok, simple}, hyper_lmdb:type(StoreOpts, <<"mylink">>))
+        ?assertEqual(simple, hyper_lmdb:type(StoreOpts, <<"mylink">>))
      end}.
 
 test_link_to_nonexistent(StoreOpts) ->

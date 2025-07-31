@@ -89,13 +89,13 @@ Read a value from the store. Automatically resolves links.
 {ok, <<"value">>} = hyper_lmdb:read(StoreOpts, <<"key">>).
 ```
 
-#### `type(StoreOpts, Key) -> {ok, Type} | not_found`
-Get the type of a key. Returns: `simple`, `composite`, or `link`.
+#### `type(StoreOpts, Key) -> simple | not_found`
+Get the type of a key. Returns `simple` for any existing key (including groups and links) or `not_found` if the key doesn't exist.
 
 ```erlang
-{ok, simple} = hyper_lmdb:type(StoreOpts, <<"file">>),
-{ok, composite} = hyper_lmdb:type(StoreOpts, <<"folder">>),
-{ok, link} = hyper_lmdb:type(StoreOpts, <<"alias">>).
+simple = hyper_lmdb:type(StoreOpts, <<"file">>),
+simple = hyper_lmdb:type(StoreOpts, <<"folder">>),  % Groups return 'simple'
+simple = hyper_lmdb:type(StoreOpts, <<"alias">>).   % Links return 'simple'
 ```
 
 ### Hierarchical Organization
@@ -279,7 +279,7 @@ ok = hyper_lmdb:write(StoreOpts, <<"malicious">>, <<"@link:secret_key">>),
 {ok, <<"@link:secret_key">>} = hyper_lmdb:read(StoreOpts, <<"malicious">>),
 
 % It's not treated as a link
-{ok, simple} = hyper_lmdb:type(StoreOpts, <<"malicious">>).
+simple = hyper_lmdb:type(StoreOpts, <<"malicious">>).
 ```
 
 ## Performance Characteristics

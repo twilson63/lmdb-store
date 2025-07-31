@@ -37,9 +37,9 @@ demo_simple_link(StoreOpts) ->
     io:format("   db_host -> ~s~n", [Value]),
     
     % Check types
-    {ok, simple} = hyper_lmdb:type(StoreOpts, <<"config/database/host">>),
-    {ok, link} = hyper_lmdb:type(StoreOpts, <<"db_host">>),
-    io:format("   Types: config/database/host is 'simple', db_host is 'link'~n~n").
+    simple = hyper_lmdb:type(StoreOpts, <<"config/database/host">>),
+    simple = hyper_lmdb:type(StoreOpts, <<"db_host">>),  % Links now return 'simple'
+    io:format("   Types: both config/database/host and db_host return 'simple'~n~n").
 
 demo_link_chains(StoreOpts) ->
     io:format("2. Link Chains:~n"),
