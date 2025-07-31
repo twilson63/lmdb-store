@@ -611,6 +611,11 @@ pub fn list_prefix<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, prefix: Term<'
 // Helper functions
 
 fn resolve_path(lmdb_env: &Arc<LmdbEnvironment>, path: &str) -> String {
+    let mut visited = HashSet::new();
+    resolve_path_recursive(lmdb_env, path, &mut visited)
+}
+
+fn resolve_path_recursive(lmdb_env: &Arc<LmdbEnvironment>, path: &str, visited: &mut HashSet<String>) -> String {
     let db = match lmdb_env.get_or_create_db(None) {
         Ok(db) => db,
         Err(_) => return path.to_string(),
@@ -621,39 +626,64 @@ fn resolve_path(lmdb_env: &Arc<LmdbEnvironment>, path: &str) -> String {
         Err(_) => return path.to_string(),
     };
     
-    let mut current_path = path.to_string();
-    let mut visited = HashSet::new();
+    // Split path into segments
+    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    if segments.is_empty() {
+        return path.to_string();
+    }
     
-    loop {
-        if visited.contains(&current_path) {
-            // Circular reference detected
-            break;
+    // Process each segment to check for links
+    let mut current_base = String::new();
+    
+    for (i, segment) in segments.iter().enumerate() {
+        // Build path up to current segment
+        if i == 0 {
+            current_base = segment.to_string();
+        } else {
+            current_base = format!("{}/{}", current_base, segment);
         }
-        visited.insert(current_path.clone());
         
-        // Check if the current path has a value
-        match txn.get(db, &current_path.as_bytes()) {
+        // Check if current path is a link
+        match txn.get(db, &current_base.as_bytes()) {
             Ok(value) => {
                 if let Ok(value_str) = std::str::from_utf8(value) {
-                    // Check if this is a link
                     if value_str.starts_with("@link:") {
-                        // Extract the target path
-                        current_path = value_str[6..].to_string();
-                        // Continue following the link
-                        continue;
+                        // Prevent circular references
+                        if visited.contains(&current_base) {
+                            return path.to_string();
+                        }
+                        visited.insert(current_base.clone());
+                        
+                        // Get the link target
+                        let link_target = &value_str[6..];
+                        
+                        // If there are remaining segments, append them to the link target
+                        if i < segments.len() - 1 {
+                            let remaining_segments = &segments[i+1..];
+                            let remaining_path = remaining_segments.join("/");
+                            let combined_path = if link_target.is_empty() {
+                                remaining_path
+                            } else {
+                                format!("{}/{}", link_target, remaining_path)
+                            };
+                            
+                            // Recursively resolve the combined path
+                            return resolve_path_recursive(lmdb_env, &combined_path, visited);
+                        } else {
+                            // This was the last segment, just resolve the link target
+                            return resolve_path_recursive(lmdb_env, link_target, visited);
+                        }
                     }
                 }
-                // Not a link or can't parse - this is the final value
-                break;
             }
             Err(_) => {
-                // Key doesn't exist
-                break;
+                // Path segment doesn't exist as a key, continue
             }
         }
     }
     
-    current_path
+    // No links found in any segment, return the original path
+    path.to_string()
 }
 
 fn ensure_parent_groups(

@@ -239,6 +239,32 @@ ok = hyper_lmdb:make_link(StoreOpts, <<"data/active">>, <<"data/latest">>),
 {ok, <<"primary data">>} = hyper_lmdb:read(StoreOpts, <<"data/latest">>).
 ```
 
+### Recursive Path Resolution
+
+The store supports recursive link resolution for path segments, enabling powerful organizational patterns:
+
+```erlang
+% Example: Creating environment-specific directory structures with links
+
+% Set up base configuration
+ok = hyper_lmdb:write(StoreOpts, <<"configs/production">>, <<"prod_config">>),
+ok = hyper_lmdb:write(StoreOpts, <<"configs/production/database/host">>, <<"db.prod.example.com">>),
+ok = hyper_lmdb:write(StoreOpts, <<"configs/production/database/port">>, <<"5432">>),
+
+% Create a link for current environment
+ok = hyper_lmdb:make_link(StoreOpts, <<"configs/production">>, <<"current_env">>),
+
+% Access nested values through the link
+{ok, <<"prod_config">>} = hyper_lmdb:read(StoreOpts, <<"current_env">>),
+{ok, <<"db.prod.example.com">>} = hyper_lmdb:read(StoreOpts, <<"current_env/database/host">>),
+{ok, <<"5432">>} = hyper_lmdb:read(StoreOpts, <<"current_env/database/port">>).
+
+% Links are resolved at each path segment level
+% If "foo" links to "bar", then "foo/baz" attempts to resolve to "bar/baz"
+```
+
+**Note**: For path resolution to work correctly, the link target must exist as a value in the database. Links to non-existent keys or to keys that only exist as groups (directories) will result in `not_found` when attempting to resolve paths through them.
+
 ## Security Features
 
 ### Link Injection Prevention
