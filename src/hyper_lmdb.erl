@@ -17,7 +17,7 @@
 %%% - <<"max_dbs">> - Maximum number of named databases (default: 128)
 %%% - <<"max_readers">> - Maximum concurrent readers (default: 126)
 
--module(hb_store_lmdb).
+-module(hyper_lmdb).
 % -behavior(hb_store).
 
 %% hb_store callbacks
@@ -25,6 +25,9 @@
 -export([type/2, read/2, write/3, list/2]).
 -export([make_group/2, make_link/3]).
 -export([path/2, add_path/3]).
+
+%% Extended API
+-export([list_prefix/2, list_prefix/3]).
 -export([scope/1]).
 
 %% Direct LMDB environment functions removed - use store API instead
@@ -143,6 +146,18 @@ path(StoreOpts, Path) ->
 add_path(StoreOpts, Path1, Path2) ->
     nif_add_path(StoreOpts, normalize_key(Path1), normalize_key(Path2)).
 
+%% @doc List all keys with a given prefix using range cursors.
+list_prefix(StoreOpts, Prefix) ->
+    list_prefix(StoreOpts, Prefix, #{}).
+
+%% @doc List all keys with a given prefix with options.
+%% Options:
+%%   - limit: Maximum number of keys to return
+%%   - cursor: Continuation cursor from previous call
+%%   - return_cursor: Return a cursor for pagination
+list_prefix(StoreOpts, Prefix, Opts) ->
+    nif_list_prefix(StoreOpts, normalize_key(Prefix), Opts).
+
 %%% Helper functions
 
 %% @doc Normalize a key to ensure consistent format.
@@ -188,6 +203,9 @@ nif_path(_StoreOpts, _Path) ->
     erlang:nif_error(nif_not_loaded).
 
 nif_add_path(_StoreOpts, _Path1, _Path2) ->
+    erlang:nif_error(nif_not_loaded).
+
+nif_list_prefix(_StoreOpts, _Prefix, _Opts) ->
     erlang:nif_error(nif_not_loaded).
 
 %% Direct environment NIFs removed - use store API instead

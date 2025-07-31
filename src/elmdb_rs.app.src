@@ -7,7 +7,7 @@
     stdlib
    ]},
   {env,[]},
-  {modules, [hb_store_lmdb]},
+  {modules, [hyper_lmdb]},
   {licenses, ["Apache 2.0"]},
   {links, []}
  ]}.

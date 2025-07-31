@@ -53,7 +53,7 @@ setup_store(#bench_config{store_name = Name, store_path = Path} = Config) ->
         <<"max_readers">> => integer_to_binary(Config#bench_config.num_readers * 2)
     },
     io:format("Starting store with opts: ~p~n", [StoreOpts]),
-    Result = hb_store_lmdb:start(StoreOpts),
+    Result = hyper_lmdb:start(StoreOpts),
     io:format("Store start result: ~p~n", [Result]),
     case Result of
         {ok, EnvRef} -> {ok, EnvRef};  % Return the environment reference
@@ -65,7 +65,7 @@ setup_store(#bench_config{store_name = Name, store_path = Path} = Config) ->
 
 teardown_store(#bench_config{store_name = Name, store_path = Path}) ->
     StoreOpts = #{<<"name">> => Name, <<"path">> => Path},
-    hb_store_lmdb:stop(StoreOpts).
+    hyper_lmdb:stop(StoreOpts).
 
 cleanup(#bench_config{store_path = Path}) ->
     os:cmd(binary_to_list(<<"rm -rf ", Path/binary>>)).
@@ -81,7 +81,7 @@ bench_sequential_writes(Store, #bench_config{num_operations = N} = Config) ->
     
     {Time, _} = timer:tc(fun() ->
         lists:foreach(fun({K, V}) ->
-            ok = hb_store_lmdb:write(Store, K, V)
+            ok = hyper_lmdb:write(Store, K, V)
         end, lists:zip(Keys, Values))
     end),
     
@@ -95,7 +95,7 @@ bench_sequential_reads(Store, #bench_config{num_operations = N} = Config) ->
     
     {Time, _} = timer:tc(fun() ->
         lists:foreach(fun(K) ->
-            {ok, _} = hb_store_lmdb:read(Store, K)
+            {ok, _} = hyper_lmdb:read(Store, K)
         end, Keys)
     end),
     
@@ -110,7 +110,7 @@ bench_random_reads(Store, #bench_config{num_operations = N} = Config) ->
     
     {Time, _} = timer:tc(fun() ->
         lists:foreach(fun(K) ->
-            {ok, _} = hb_store_lmdb:read(Store, K)
+            {ok, _} = hyper_lmdb:read(Store, K)
         end, RandomKeys)
     end),
     
@@ -127,8 +127,8 @@ bench_mixed_operations(Store, #bench_config{num_operations = N} = Config) ->
     
     {Time, _} = timer:tc(fun() ->
         lists:foreach(fun
-            ({read, K}) -> {ok, _} = hb_store_lmdb:read(Store, K);
-            ({write, K, V}) -> ok = hb_store_lmdb:write(Store, K, V)
+            ({read, K}) -> {ok, _} = hyper_lmdb:read(Store, K);
+            ({write, K, V}) -> ok = hyper_lmdb:write(Store, K, V)
         end, Operations)
     end),
     
@@ -145,7 +145,7 @@ bench_batch_writes(Store, #bench_config{num_operations = N, batch_size = BatchSi
     {Time, _} = timer:tc(fun() ->
         lists:foreach(fun(Batch) ->
             lists:foreach(fun({K, V}) ->
-                ok = hb_store_lmdb:write(Store, K, V)
+                ok = hyper_lmdb:write(Store, K, V)
             end, Batch)
         end, Batches)
     end),
@@ -218,14 +218,14 @@ bench_various_value_sizes(Store, Config) ->
         % Write benchmark
         {WriteTime, _} = timer:tc(fun() ->
             lists:foreach(fun({K, V}) ->
-                ok = hb_store_lmdb:write(Store, K, V)
+                ok = hyper_lmdb:write(Store, K, V)
             end, lists:zip(Keys, Values))
         end),
         
         % Read benchmark
         {ReadTime, _} = timer:tc(fun() ->
             lists:foreach(fun(K) ->
-                {ok, _} = hb_store_lmdb:read(Store, K)
+                {ok, _} = hyper_lmdb:read(Store, K)
             end, Keys)
         end),
         
@@ -238,13 +238,13 @@ bench_various_value_sizes(Store, Config) ->
 %% Worker processes
 reader_worker(Store, Keys, Parent) ->
     lists:foreach(fun(K) ->
-        {ok, _} = hb_store_lmdb:read(Store, K)
+        {ok, _} = hyper_lmdb:read(Store, K)
     end, Keys),
     Parent ! {done, self()}.
 
 writer_worker(Store, Keys, Values, Parent) ->
     lists:foreach(fun({K, V}) ->
-        ok = hb_store_lmdb:write(Store, K, V)
+        ok = hyper_lmdb:write(Store, K, V)
     end, lists:zip(Keys, Values)),
     Parent ! {done, self()}.
 

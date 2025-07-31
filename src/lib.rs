@@ -10,7 +10,7 @@ mod path_ops;
 mod store;
 
 rustler::init!(
-    "hb_store_lmdb",
+    "hyper_lmdb",
     [
         nif_start,
         nif_stop,
@@ -22,7 +22,8 @@ rustler::init!(
         nif_make_group,
         nif_make_link,
         nif_path,
-        nif_add_path
+        nif_add_path,
+        nif_list_prefix
     ],
     load = on_load
 );
@@ -84,6 +85,11 @@ fn nif_path<'a>(env: Env<'a>, store_opts: Term<'a>, path: Term<'a>) -> NifResult
 #[rustler::nif]
 fn nif_add_path<'a>(env: Env<'a>, store_opts: Term<'a>, path1: Term<'a>, path2: Term<'a>) -> NifResult<Term<'a>> {
     store::add_path(env, store_opts, path1, path2)
+}
+
+#[rustler::nif]
+fn nif_list_prefix<'a>(env: Env<'a>, store_opts: Term<'a>, prefix: Term<'a>, opts: Term<'a>) -> NifResult<Term<'a>> {
+    store::list_prefix(env, store_opts, prefix, opts)
 }
 
 // Direct environment functions removed - use store API instead

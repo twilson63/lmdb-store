@@ -5,7 +5,7 @@ test() ->
     io:format("Testing LMDB environment open/close...~n"),
     
     % Load the NIF
-    ok = hb_store_lmdb:init(),
+    ok = hyper_lmdb:init(),
     io:format("NIF loaded successfully~n"),
     
     % Test opening an environment
@@ -16,12 +16,12 @@ test() ->
         <<"max_readers">> => 50
     },
     
-    case hb_store_lmdb:nif_env_open(TestPath, Opts) of
+    case hyper_lmdb:nif_env_open(TestPath, Opts) of
         {ok, EnvRef} ->
             io:format("Environment opened successfully: ~p~n", [EnvRef]),
             
             % Test closing the environment
-            case hb_store_lmdb:nif_env_close(EnvRef) of
+            case hyper_lmdb:nif_env_close(EnvRef) of
                 ok ->
                     io:format("Environment closed successfully~n"),
                     ok;

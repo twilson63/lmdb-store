@@ -5,7 +5,7 @@ test() ->
     io:format("Testing LMDB get/put operations...~n"),
     
     % Load the NIF
-    ok = hb_store_lmdb:init(),
+    ok = hyper_lmdb:init(),
     io:format("NIF loaded successfully~n"),
     
     % Test opening an environment
@@ -16,7 +16,7 @@ test() ->
         <<"max_readers">> => 50
     },
     
-    case hb_store_lmdb:nif_env_open(TestPath, Opts) of
+    case hyper_lmdb:nif_env_open(TestPath, Opts) of
         {ok, EnvRef} ->
             io:format("Environment opened successfully~n"),
             
@@ -24,11 +24,11 @@ test() ->
             Key1 = <<"test_key_1">>,
             Value1 = <<"test_value_1">>,
             
-            case hb_store_lmdb:nif_env_put(EnvRef, nil, Key1, Value1) of
+            case hyper_lmdb:nif_env_put(EnvRef, nil, Key1, Value1) of
                 ok ->
                     io:format("Put Key1 successfully~n"),
                     
-                    case hb_store_lmdb:nif_env_get(EnvRef, nil, Key1) of
+                    case hyper_lmdb:nif_env_get(EnvRef, nil, Key1) of
                         {ok, Value1} ->
                             io:format("Get Key1 returned correct value~n");
                         {ok, Other} ->
@@ -45,11 +45,11 @@ test() ->
             Key2 = <<"test_key_2">>,
             Value2 = <<"test_value_2">>,
             
-            case hb_store_lmdb:nif_env_put(EnvRef, DbName, Key2, Value2) of
+            case hyper_lmdb:nif_env_put(EnvRef, DbName, Key2, Value2) of
                 ok ->
                     io:format("Put Key2 in named db successfully~n"),
                     
-                    case hb_store_lmdb:nif_env_get(EnvRef, DbName, Key2) of
+                    case hyper_lmdb:nif_env_get(EnvRef, DbName, Key2) of
                         {ok, Value2} ->
                             io:format("Get Key2 from named db returned correct value~n");
                         {ok, Other2} ->
@@ -62,7 +62,7 @@ test() ->
             end,
             
             % Test 3: Get non-existent key
-            case hb_store_lmdb:nif_env_get(EnvRef, nil, <<"non_existent_key">>) of
+            case hyper_lmdb:nif_env_get(EnvRef, nil, <<"non_existent_key">>) of
                 not_found ->
                     io:format("Get non-existent key correctly returned not_found~n");
                 Other3 ->
@@ -70,7 +70,7 @@ test() ->
             end,
             
             % Test 4: Cross-database isolation
-            case hb_store_lmdb:nif_env_get(EnvRef, DbName, Key1) of
+            case hyper_lmdb:nif_env_get(EnvRef, DbName, Key1) of
                 not_found ->
                     io:format("Cross-database isolation verified (Key1 not in named db)~n");
                 Other4 ->
@@ -78,7 +78,7 @@ test() ->
             end,
             
             % Close the environment
-            case hb_store_lmdb:nif_env_close(EnvRef) of
+            case hyper_lmdb:nif_env_close(EnvRef) of
                 ok ->
                     io:format("Environment closed successfully~n"),
                     ok;

@@ -41,62 +41,62 @@ make test
 ```erlang
 % Initialize store
 StoreOpts = #{
-    <<"store-module">> => hb_store_lmdb,
+    <<"store-module">> => hyper_lmdb,
     <<"name">> => <<"mystore">>,
     <<"path">> => <<"./data/mystore">>,
     <<"map_size">> => 1073741824  % 1GB
 },
-ok = hb_store_lmdb:start(StoreOpts),
+ok = hyper_lmdb:start(StoreOpts),
 
 % Write and read data
-ok = hb_store_lmdb:write(StoreOpts, <<"key">>, <<"value">>),
-{ok, <<"value">>} = hb_store_lmdb:read(StoreOpts, <<"key">>),
+ok = hyper_lmdb:write(StoreOpts, <<"key">>, <<"value">>),
+{ok, <<"value">>} = hyper_lmdb:read(StoreOpts, <<"key">>),
 
 % Clean up
-hb_store_lmdb:stop(StoreOpts).
+hyper_lmdb:stop(StoreOpts).
 ```
 
 ### Hierarchical Keys and Groups
 
 ```erlang
 % Create a group (like a directory)
-ok = hb_store_lmdb:make_group(StoreOpts, <<"users">>),
+ok = hyper_lmdb:make_group(StoreOpts, <<"users">>),
 
 % Write to nested paths
-ok = hb_store_lmdb:write(StoreOpts, [<<"users">>, <<"alice">>], <<"Alice Data">>),
-ok = hb_store_lmdb:write(StoreOpts, [<<"users">>, <<"bob">>], <<"Bob Data">>),
+ok = hyper_lmdb:write(StoreOpts, [<<"users">>, <<"alice">>], <<"Alice Data">>),
+ok = hyper_lmdb:write(StoreOpts, [<<"users">>, <<"bob">>], <<"Bob Data">>),
 
 % List items in a group
-{ok, Users} = hb_store_lmdb:list(StoreOpts, <<"users">>),
+{ok, Users} = hyper_lmdb:list(StoreOpts, <<"users">>),
 % Users = [<<"alice">>, <<"bob">>]
 
 % Read from nested path
-{ok, <<"Alice Data">>} = hb_store_lmdb:read(StoreOpts, [<<"users">>, <<"alice">>]).
+{ok, <<"Alice Data">>} = hyper_lmdb:read(StoreOpts, [<<"users">>, <<"alice">>]).
 ```
 
 ### Symbolic Links
 
 ```erlang
 % Create a link
-ok = hb_store_lmdb:write(StoreOpts, <<"users/current">>, <<"Alice">>),
-ok = hb_store_lmdb:make_link(StoreOpts, <<"users/current">>, <<"current-user">>),
+ok = hyper_lmdb:write(StoreOpts, <<"users/current">>, <<"Alice">>),
+ok = hyper_lmdb:make_link(StoreOpts, <<"users/current">>, <<"current-user">>),
 
 % Reading through the link resolves to the target
-{ok, <<"Alice">>} = hb_store_lmdb:read(StoreOpts, <<"current-user">>).
+{ok, <<"Alice">>} = hyper_lmdb:read(StoreOpts, <<"current-user">>).
 ```
 
 ### Type Detection
 
 ```erlang
 % Check the type of a key
-ok = hb_store_lmdb:write(StoreOpts, <<"file">>, <<"data">>),
-{ok, simple} = hb_store_lmdb:type(StoreOpts, <<"file">>),
+ok = hyper_lmdb:write(StoreOpts, <<"file">>, <<"data">>),
+{ok, simple} = hyper_lmdb:type(StoreOpts, <<"file">>),
 
-ok = hb_store_lmdb:make_group(StoreOpts, <<"folder">>),
-{ok, composite} = hb_store_lmdb:type(StoreOpts, <<"folder">>),
+ok = hyper_lmdb:make_group(StoreOpts, <<"folder">>),
+{ok, composite} = hyper_lmdb:type(StoreOpts, <<"folder">>),
 
-ok = hb_store_lmdb:make_link(StoreOpts, <<"file">>, <<"alias">>),
-{ok, link} = hb_store_lmdb:type(StoreOpts, <<"alias">>).
+ok = hyper_lmdb:make_link(StoreOpts, <<"file">>, <<"alias">>),
+{ok, link} = hyper_lmdb:type(StoreOpts, <<"alias">>).
 ```
 
 ## Configuration Options
@@ -150,7 +150,7 @@ This store implements the complete `hb_store` behavior and can be used as a drop
 % In your HyperBEAM configuration
 Stores = [
     #{
-        <<"store-module">> => hb_store_lmdb,
+        <<"store-module">> => hyper_lmdb,
         <<"name">> => <<"primary">>,
         <<"path">> => <<"./data/primary">>,
         <<"map_size">> => 107374182400  % 100GB
@@ -179,5 +179,5 @@ Contributions are welcome! Please ensure all tests pass and add new tests for an
 make test
 
 # Run benchmarks
-erl -pa ebin -pa test -noshell -eval "hb_store_lmdb_test:benchmark(), init:stop()."
+erl -pa ebin -pa test -noshell -eval "hyper_lmdb_test:benchmark(), init:stop()."
 ```

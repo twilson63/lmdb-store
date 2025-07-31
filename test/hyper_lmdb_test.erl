@@ -1,22 +1,22 @@
--module(hb_store_lmdb_test).
+-module(hyper_lmdb_test).
 -include_lib("eunit/include/eunit.hrl").
 
 %% Test fixture setup and teardown
 setup() ->
     StoreOpts = #{
-        <<"store-module">> => hb_store_lmdb,
+        <<"store-module">> => hyper_lmdb,
         <<"name">> => <<"test-store">>,
         <<"path">> => <<"./test-lmdb">>
     },
-    case hb_store_lmdb:start(StoreOpts) of
+    case hyper_lmdb:start(StoreOpts) of
         {ok, _EnvRef} -> ok;
         ok -> ok
     end,
     StoreOpts.
 
 cleanup(StoreOpts) ->
-    hb_store_lmdb:reset(StoreOpts),
-    hb_store_lmdb:stop(StoreOpts),
+    hyper_lmdb:reset(StoreOpts),
+    hyper_lmdb:stop(StoreOpts),
     os:cmd("rm -rf ./test-lmdb").
 
 %% Test suite
@@ -38,59 +38,59 @@ lmdb_test_() ->
 
 test_basic_read_write(Store) ->
     fun() ->
-        ?assertEqual(ok, hb_store_lmdb:write(Store, <<"key1">>, <<"value1">>)),
-        ?assertEqual({ok, <<"value1">>}, hb_store_lmdb:read(Store, <<"key1">>)),
+        ?assertEqual(ok, hyper_lmdb:write(Store, <<"key1">>, <<"value1">>)),
+        ?assertEqual({ok, <<"value1">>}, hyper_lmdb:read(Store, <<"key1">>)),
         
         % Test overwrite
-        ?assertEqual(ok, hb_store_lmdb:write(Store, <<"key1">>, <<"value2">>)),
-        ?assertEqual({ok, <<"value2">>}, hb_store_lmdb:read(Store, <<"key1">>))
+        ?assertEqual(ok, hyper_lmdb:write(Store, <<"key1">>, <<"value2">>)),
+        ?assertEqual({ok, <<"value2">>}, hyper_lmdb:read(Store, <<"key1">>))
     end.
 
 test_not_found(Store) ->
     fun() ->
-        ?assertEqual(not_found, hb_store_lmdb:read(Store, <<"nonexistent">>))
+        ?assertEqual(not_found, hyper_lmdb:read(Store, <<"nonexistent">>))
     end.
 
 test_groups(Store) ->
     fun() ->
         % Create a group
-        ?assertEqual(ok, hb_store_lmdb:make_group(Store, <<"mygroup">>)),
+        ?assertEqual(ok, hyper_lmdb:make_group(Store, <<"mygroup">>)),
         
         % Write to group
-        ?assertEqual(ok, hb_store_lmdb:write(Store, [<<"mygroup">>, <<"item1">>], <<"data1">>)),
-        ?assertEqual(ok, hb_store_lmdb:write(Store, [<<"mygroup">>, <<"item2">>], <<"data2">>)),
+        ?assertEqual(ok, hyper_lmdb:write(Store, [<<"mygroup">>, <<"item1">>], <<"data1">>)),
+        ?assertEqual(ok, hyper_lmdb:write(Store, [<<"mygroup">>, <<"item2">>], <<"data2">>)),
         
         % Read from group
-        ?assertEqual({ok, <<"data1">>}, hb_store_lmdb:read(Store, [<<"mygroup">>, <<"item1">>])),
-        ?assertEqual({ok, <<"data2">>}, hb_store_lmdb:read(Store, [<<"mygroup">>, <<"item2">>]))
+        ?assertEqual({ok, <<"data1">>}, hyper_lmdb:read(Store, [<<"mygroup">>, <<"item1">>])),
+        ?assertEqual({ok, <<"data2">>}, hyper_lmdb:read(Store, [<<"mygroup">>, <<"item2">>]))
     end.
 
 test_links(Store) ->
     fun() ->
         % Create original key
-        ?assertEqual(ok, hb_store_lmdb:write(Store, <<"original">>, <<"data">>)),
+        ?assertEqual(ok, hyper_lmdb:write(Store, <<"original">>, <<"data">>)),
         
         % Create link
-        ?assertEqual(ok, hb_store_lmdb:make_link(Store, <<"original">>, <<"link">>)),
+        ?assertEqual(ok, hyper_lmdb:make_link(Store, <<"original">>, <<"link">>)),
         
         % Read through link
-        ?assertEqual({ok, <<"data">>}, hb_store_lmdb:read(Store, <<"link">>)),
+        ?assertEqual({ok, <<"data">>}, hyper_lmdb:read(Store, <<"link">>)),
         
         % Test recursive links
-        ?assertEqual(ok, hb_store_lmdb:make_link(Store, <<"link">>, <<"link2">>)),
-        ?assertEqual({ok, <<"data">>}, hb_store_lmdb:read(Store, <<"link2">>))
+        ?assertEqual(ok, hyper_lmdb:make_link(Store, <<"link">>, <<"link2">>)),
+        ?assertEqual({ok, <<"data">>}, hyper_lmdb:read(Store, <<"link2">>))
     end.
 
 test_list(Store) ->
     fun() ->
         % Create a group with items
-        ?assertEqual(ok, hb_store_lmdb:make_group(Store, <<"listgroup">>)),
-        ?assertEqual(ok, hb_store_lmdb:write(Store, [<<"listgroup">>, <<"a">>], <<"1">>)),
-        ?assertEqual(ok, hb_store_lmdb:write(Store, [<<"listgroup">>, <<"b">>], <<"2">>)),
-        ?assertEqual(ok, hb_store_lmdb:write(Store, [<<"listgroup">>, <<"c">>], <<"3">>)),
+        ?assertEqual(ok, hyper_lmdb:make_group(Store, <<"listgroup">>)),
+        ?assertEqual(ok, hyper_lmdb:write(Store, [<<"listgroup">>, <<"a">>], <<"1">>)),
+        ?assertEqual(ok, hyper_lmdb:write(Store, [<<"listgroup">>, <<"b">>], <<"2">>)),
+        ?assertEqual(ok, hyper_lmdb:write(Store, [<<"listgroup">>, <<"c">>], <<"3">>)),
         
         % List items
-        {ok, Items} = hb_store_lmdb:list(Store, <<"listgroup">>),
+        {ok, Items} = hyper_lmdb:list(Store, <<"listgroup">>),
         ?assertEqual(3, length(Items)),
         ?assert(lists:member(<<"a">>, Items)),
         ?assert(lists:member(<<"b">>, Items)),
@@ -100,32 +100,32 @@ test_list(Store) ->
 test_hierarchical_paths(Store) ->
     fun() ->
         % Create nested groups
-        ?assertEqual(ok, hb_store_lmdb:make_group(Store, <<"level1">>)),
-        ?assertEqual(ok, hb_store_lmdb:make_group(Store, [<<"level1">>, <<"level2">>])),
+        ?assertEqual(ok, hyper_lmdb:make_group(Store, <<"level1">>)),
+        ?assertEqual(ok, hyper_lmdb:make_group(Store, [<<"level1">>, <<"level2">>])),
         
         % Write to nested path
-        ?assertEqual(ok, hb_store_lmdb:write(Store, [<<"level1">>, <<"level2">>, <<"item">>], <<"nested">>)),
+        ?assertEqual(ok, hyper_lmdb:write(Store, [<<"level1">>, <<"level2">>, <<"item">>], <<"nested">>)),
         
         % Read from nested path
-        ?assertEqual({ok, <<"nested">>}, hb_store_lmdb:read(Store, [<<"level1">>, <<"level2">>, <<"item">>]))
+        ?assertEqual({ok, <<"nested">>}, hyper_lmdb:read(Store, [<<"level1">>, <<"level2">>, <<"item">>]))
     end.
 
 test_type_detection(Store) ->
     fun() ->
         % Test simple type
-        ?assertEqual(ok, hb_store_lmdb:write(Store, <<"simple">>, <<"value">>)),
-        ?assertEqual({ok, simple}, hb_store_lmdb:type(Store, <<"simple">>)),
+        ?assertEqual(ok, hyper_lmdb:write(Store, <<"simple">>, <<"value">>)),
+        ?assertEqual({ok, simple}, hyper_lmdb:type(Store, <<"simple">>)),
         
         % Test composite type
-        ?assertEqual(ok, hb_store_lmdb:make_group(Store, <<"group">>)),
-        ?assertEqual({ok, composite}, hb_store_lmdb:type(Store, <<"group">>)),
+        ?assertEqual(ok, hyper_lmdb:make_group(Store, <<"group">>)),
+        ?assertEqual({ok, composite}, hyper_lmdb:type(Store, <<"group">>)),
         
         % Test link type
-        ?assertEqual(ok, hb_store_lmdb:make_link(Store, <<"simple">>, <<"mylink">>)),
-        ?assertEqual({ok, link}, hb_store_lmdb:type(Store, <<"mylink">>)),
+        ?assertEqual(ok, hyper_lmdb:make_link(Store, <<"simple">>, <<"mylink">>)),
+        ?assertEqual({ok, link}, hyper_lmdb:type(Store, <<"mylink">>)),
         
         % Test not found
-        ?assertEqual(not_found, hb_store_lmdb:type(Store, <<"nonexistent">>))
+        ?assertEqual(not_found, hyper_lmdb:type(Store, <<"nonexistent">>))
     end.
 
 %% Performance benchmarks
@@ -144,7 +144,7 @@ benchmark() ->
             fun(N) ->
                 Key = iolist_to_binary([<<"key-">>, integer_to_binary(N)]),
                 Value = iolist_to_binary([<<"value-">>, integer_to_binary(N)]),
-                ok = hb_store_lmdb:write(Store, Key, Value)
+                ok = hyper_lmdb:write(Store, Key, Value)
             end,
             lists:seq(1, WriteCount)
         ),
@@ -161,7 +161,7 @@ benchmark() ->
             fun(_) ->
                 N = rand:uniform(WriteCount),
                 Key = iolist_to_binary([<<"key-">>, integer_to_binary(N)]),
-                {ok, _} = hb_store_lmdb:read(Store, Key)
+                {ok, _} = hyper_lmdb:read(Store, Key)
             end,
             lists:seq(1, ReadCount)
         ),

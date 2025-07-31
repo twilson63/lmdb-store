@@ -20,7 +20,7 @@ setup() ->
         <<"map_size">> => 1024 * 1024 * 1024  % 1GB
     },
     os:cmd("rm -rf /tmp/elmdb_perf_test"),
-    case hb_store_lmdb:start(StoreOpts) of
+    case hyper_lmdb:start(StoreOpts) of
         {ok, _EnvRef} -> StoreOpts;  % Always use StoreOpts
         ok -> StoreOpts
     end.
@@ -30,7 +30,7 @@ cleanup(Store) ->
         <<"name">> => <<"perf_test">>,
         <<"path">> => <<"/tmp/elmdb_perf_test">>
     },
-    hb_store_lmdb:stop(StoreOpts),
+    hyper_lmdb:stop(StoreOpts),
     os:cmd("rm -rf /tmp/elmdb_perf_test").
 
 small_dataset_test() ->
@@ -43,7 +43,7 @@ small_dataset_test() ->
         % Write performance
         WriteStart = erlang:monotonic_time(microsecond),
         lists:foreach(fun({K, V}) ->
-            ?assertEqual(ok, hb_store_lmdb:write(Store, K, V))
+            ?assertEqual(ok, hyper_lmdb:write(Store, K, V))
         end, lists:zip(Keys, Values)),
         WriteTime = erlang:monotonic_time(microsecond) - WriteStart,
         WriteOpsPerSec = ?SMALL_OPS * 1000000 / WriteTime,
@@ -51,7 +51,7 @@ small_dataset_test() ->
         % Read performance
         ReadStart = erlang:monotonic_time(microsecond),
         lists:foreach(fun(K) ->
-            ?assertMatch({ok, _}, hb_store_lmdb:read(Store, K))
+            ?assertMatch({ok, _}, hyper_lmdb:read(Store, K))
         end, Keys),
         ReadTime = erlang:monotonic_time(microsecond) - ReadStart,
         ReadOpsPerSec = ?SMALL_OPS * 1000000 / ReadTime,
@@ -78,7 +78,7 @@ medium_dataset_test() ->
         lists:foreach(fun(I) ->
             Key = <<"med_key_", (integer_to_binary(I))/binary>>,
             Value = crypto:strong_rand_bytes(1024),
-            ?assertEqual(ok, hb_store_lmdb:write(Store, Key, Value))
+            ?assertEqual(ok, hyper_lmdb:write(Store, Key, Value))
         end, lists:seq(1, N)),
         WriteTime = erlang:monotonic_time(microsecond) - WriteStart,
         
@@ -87,7 +87,7 @@ medium_dataset_test() ->
                     || _ <- lists:seq(1, N)],
         ReadStart = erlang:monotonic_time(microsecond),
         lists:foreach(fun(K) ->
-            ?assertMatch({ok, _}, hb_store_lmdb:read(Store, K))
+            ?assertMatch({ok, _}, hyper_lmdb:read(Store, K))
         end, ReadKeys),
         ReadTime = erlang:monotonic_time(microsecond) - ReadStart,
         
@@ -116,14 +116,14 @@ large_value_test() ->
             % Write test
             WriteStart = erlang:monotonic_time(microsecond),
             lists:foreach(fun({K, V}) ->
-                ?assertEqual(ok, hb_store_lmdb:write(Store, K, V))
+                ?assertEqual(ok, hyper_lmdb:write(Store, K, V))
             end, lists:zip(Keys, Values)),
             WriteTime = erlang:monotonic_time(microsecond) - WriteStart,
             
             % Read test
             ReadStart = erlang:monotonic_time(microsecond),
             lists:foreach(fun(K) ->
-                ?assertMatch({ok, _}, hb_store_lmdb:read(Store, K))
+                ?assertMatch({ok, _}, hyper_lmdb:read(Store, K))
             end, Keys),
             ReadTime = erlang:monotonic_time(microsecond) - ReadStart,
             
@@ -147,7 +147,7 @@ concurrent_test() ->
         lists:foreach(fun(I) ->
             Key = <<"concurrent_", (integer_to_binary(I))/binary>>,
             Value = crypto:strong_rand_bytes(512),
-            ?assertEqual(ok, hb_store_lmdb:write(Store, Key, Value))
+            ?assertEqual(ok, hyper_lmdb:write(Store, Key, Value))
         end, lists:seq(1, N)),
         
         % Concurrent read test
@@ -157,7 +157,7 @@ concurrent_test() ->
         ReadPids = [spawn_link(fun() ->
             lists:foreach(fun(J) ->
                 Key = <<"concurrent_", (integer_to_binary(J))/binary>>,
-                ?assertMatch({ok, _}, hb_store_lmdb:read(Store, Key))
+                ?assertMatch({ok, _}, hyper_lmdb:read(Store, Key))
             end, lists:seq((I-1)*OpsPerWorker + 1, I*OpsPerWorker)),
             Parent ! {done, self()}
         end) || I <- lists:seq(1, NumWorkers)],
@@ -174,10 +174,10 @@ concurrent_test() ->
                     1 -> % Write
                         Key = <<"mixed_", (integer_to_binary(J))/binary>>,
                         Value = crypto:strong_rand_bytes(512),
-                        ?assertEqual(ok, hb_store_lmdb:write(Store, Key, Value));
+                        ?assertEqual(ok, hyper_lmdb:write(Store, Key, Value));
                     _ -> % Read
                         Key = <<"concurrent_", (integer_to_binary(rand:uniform(N)))/binary>>,
-                        ?assertMatch({ok, _}, hb_store_lmdb:read(Store, Key))
+                        ?assertMatch({ok, _}, hyper_lmdb:read(Store, Key))
                 end
             end, lists:seq((I-1)*OpsPerWorker + 1, I*OpsPerWorker)),
             Parent ! {done, self()}

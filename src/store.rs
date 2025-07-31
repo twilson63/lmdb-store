@@ -437,6 +437,155 @@ pub fn add_path<'a>(env: RustlerEnv<'a>, _store_opts: Term<'a>, path1: Term<'a>,
     Ok(combined.encode(env))
 }
 
+pub fn list_prefix<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, prefix: Term<'a>, opts: Term<'a>) -> NifResult<Term<'a>> {
+    let prefix_str = decode_path(prefix)?;
+    
+    // Try to decode store_opts as an environment resource first
+    let lmdb_env = if let Ok(resource) = store_opts.decode::<ResourceArc<EnvironmentResource>>() {
+        resource.0.clone()
+    } else {
+        // Fall back to parsing store_opts and looking up by name
+        let opts_map = parse_store_opts(store_opts)?;
+        let name = opts_map.get("name")
+            .or_else(|| opts_map.get("store-module"))
+            .ok_or(Error::BadArg)?;
+        
+        let envs = ENVIRONMENTS.read();
+        envs.get(name).cloned().ok_or(Error::BadArg)?
+    };
+    
+    // Parse options
+    let mut limit: Option<usize> = None;
+    let mut start_after: Option<String> = None;
+    let mut return_cursor = false;
+    
+    if let Ok(opts_iter) = opts.decode::<MapIterator>() {
+        for (key, value) in opts_iter {
+            let key_str = if let Ok(s) = key.decode::<String>() {
+                s
+            } else if let Ok(bin) = key.decode::<Binary>() {
+                std::str::from_utf8(bin.as_slice())
+                    .map_err(|_| Error::BadArg)?
+                    .to_string()
+            } else if let Ok(atom) = key.decode::<rustler::Atom>() {
+                format!("{:?}", atom)
+            } else {
+                continue;
+            };
+            
+            match key_str.as_str() {
+                "limit" => {
+                    if let Ok(l) = value.decode::<i64>() {
+                        limit = Some(l as usize);
+                    }
+                }
+                "cursor" => {
+                    if let Ok(cursor) = value.decode::<String>() {
+                        start_after = Some(cursor);
+                    } else if let Ok(bin) = value.decode::<Binary>() {
+                        start_after = Some(std::str::from_utf8(bin.as_slice())
+                            .map_err(|_| Error::BadArg)?
+                            .to_string());
+                    }
+                }
+                "return_cursor" => {
+                    if let Ok(b) = value.decode::<bool>() {
+                        return_cursor = b;
+                    } else if value.decode::<rustler::Atom>().is_ok() {
+                        return_cursor = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    
+    let db = match lmdb_env.get_or_create_db(None) {
+        Ok(db) => db,
+        Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
+    };
+    
+    let txn = match lmdb_env.env.begin_ro_txn() {
+        Ok(t) => t,
+        Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
+    };
+    
+    let mut cursor = match txn.open_ro_cursor(db) {
+        Ok(c) => c,
+        Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
+    };
+    
+    let mut keys = Vec::new();
+    let mut last_key = None;
+    
+    // Determine where to start iterating
+    let start_key = if let Some(ref after) = start_after {
+        // Start after the cursor position
+        after.as_bytes()
+    } else if prefix_str.is_empty() {
+        // Empty prefix means list all
+        b""
+    } else {
+        // Start at the prefix
+        prefix_str.as_bytes()
+    };
+    
+    // Start iteration from the beginning to avoid panics
+    for (key, _) in cursor.iter_start() {
+        let key_str = match std::str::from_utf8(key) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        
+        // Skip keys before our start position
+        if !start_key.is_empty() && key < start_key {
+            continue;
+        }
+        
+        // Skip the cursor key itself if provided
+        if let Some(ref after) = start_after {
+            if key_str == after {
+                continue;
+            }
+        }
+        
+        // Check if key starts with prefix
+        if !prefix_str.is_empty() && !key_str.starts_with(&prefix_str) {
+            break; // We've passed all keys with this prefix
+        }
+        
+        // Skip internal markers (groups and links)
+        if key_str.ends_with(GROUP_MARKER) || key_str.ends_with(LINK_MARKER) {
+            continue;
+        }
+        
+        keys.push(key_str.to_string());
+        last_key = Some(key_str.to_string());
+        
+        // Check limit
+        if let Some(l) = limit {
+            if keys.len() >= l {
+                break;
+            }
+        }
+    }
+    
+    // Convert keys to Erlang terms
+    let keys_term: Vec<Term> = keys.iter()
+        .map(|k| k.encode(env))
+        .collect();
+    
+    if return_cursor {
+        if let Some(last) = last_key {
+            Ok((atoms::ok(), keys_term, last).encode(env))
+        } else {
+            Ok((atoms::ok(), keys_term, atoms::nil()).encode(env))
+        }
+    } else {
+        Ok((atoms::ok(), keys_term).encode(env))
+    }
+}
+
 // Helper functions
 
 fn resolve_path(lmdb_env: &Arc<LmdbEnvironment>, path: &str) -> String {
