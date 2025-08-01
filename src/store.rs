@@ -9,13 +9,14 @@ use lmdb::{Transaction, Cursor, WriteFlags};
 use crate::atoms;
 use crate::environment::{LmdbEnvironment, EnvironmentResource};
 use crate::path_ops::*;
+use crate::cache::{resolve_path_cached, invalidate_path_cache, invalidate_link_cache};
 
 // Global registry of active environments
-static ENVIRONMENTS: Lazy<RwLock<HashMap<String, Arc<LmdbEnvironment>>>> = 
+pub(crate) static ENVIRONMENTS: Lazy<RwLock<HashMap<String, Arc<LmdbEnvironment>>>> = 
     Lazy::new(|| RwLock::new(HashMap::new()));
 
 // Helper function to get a canonical key for environment lookup
-fn get_canonical_key(name: &str) -> String {
+pub(crate) fn get_canonical_key(name: &str) -> String {
     let path = PathBuf::from(name);
     
     // First, make the path absolute if it's not already
@@ -47,7 +48,7 @@ fn get_canonical_key(name: &str) -> String {
 }
 
 // Helper to extract store options from Erlang term
-fn parse_store_opts(term: Term) -> NifResult<HashMap<String, String>> {
+pub(crate) fn parse_store_opts(term: Term) -> NifResult<HashMap<String, String>> {
     let mut opts = HashMap::new();
     
     let iter: MapIterator = term.decode()?;
@@ -89,7 +90,7 @@ fn parse_store_opts(term: Term) -> NifResult<HashMap<String, String>> {
 }
 
 // Helper to decode path from Erlang term
-fn decode_path(term: Term) -> NifResult<String> {
+pub(crate) fn decode_path(term: Term) -> NifResult<String> {
     if let Ok(bin) = term.decode::<Binary>() {
         Ok(std::str::from_utf8(bin.as_slice())
             .map_err(|_| Error::BadArg)?
@@ -234,6 +235,11 @@ pub fn read<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>) -> Nif
         envs.get(&key).cloned().ok_or(Error::BadArg)?
     };
     
+    // For now, disable caching for link resolution to fix the bug
+    // TODO: Implement proper cache invalidation that tracks link dependencies
+    let resolved_key = resolve_path(&lmdb_env, &key_str);
+    
+    
     let db = match lmdb_env.get_or_create_db(None) {
         Ok(db) => db,
         Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
@@ -244,28 +250,27 @@ pub fn read<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>) -> Nif
         Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
     };
     
-    // Resolve any links in the path
-    let resolved_key = resolve_path(&lmdb_env, &key_str);
-    
     match txn.get(db, &resolved_key.as_bytes()) {
         Ok(data) => {
-            if let Ok(data_str) = std::str::from_utf8(data) {
-                if data_str.starts_with("@link:") {
-                    // If we still have a link after resolution, it means we hit a circular reference
-                    // or a broken link chain
-                    return Ok(atoms::not_found().encode(env));
-                } else if data_str.starts_with("@data:") {
-                    // Regular data - strip the prefix
-                    let actual_data = &data[6..];
-                    let mut binary = rustler::OwnedBinary::new(actual_data.len()).unwrap();
-                    binary.as_mut_slice().copy_from_slice(actual_data);
-                    return Ok((atoms::ok(), binary.release(env)).encode(env));
-                }
+            
+            // Check for prefixes by looking at the raw bytes
+            if data.starts_with(b"@link:") {
+                // This is a link - for now, just return not_found
+                // In the future, we might want to follow the link or return a special value
+                // But for compatibility with other stores, links themselves are not readable values
+                return Ok(atoms::not_found().encode(env));
+            } else if data.starts_with(b"@data:") {
+                // Regular data - strip the prefix
+                let actual_data = &data[6..];
+                let mut binary = rustler::OwnedBinary::new(actual_data.len()).unwrap();
+                binary.as_mut_slice().copy_from_slice(actual_data);
+                return Ok((atoms::ok(), binary.release(env)).encode(env));
+            } else {
+                // Legacy data without prefix
+                let mut binary = rustler::OwnedBinary::new(data.len()).unwrap();
+                binary.as_mut_slice().copy_from_slice(data);
+                return Ok((atoms::ok(), binary.release(env)).encode(env));
             }
-            // Legacy data without prefix
-            let mut binary = rustler::OwnedBinary::new(data.len()).unwrap();
-            binary.as_mut_slice().copy_from_slice(data);
-            return Ok((atoms::ok(), binary.release(env)).encode(env));
         }
         Err(lmdb::Error::NotFound) => return Ok(atoms::not_found().encode(env)),
         Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
@@ -308,9 +313,16 @@ pub fn write<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>, value
     // Prefix the value with @data: to distinguish from links
     let prefixed_value = [b"@data:", value_bin.as_slice()].concat();
     
+    
     match txn.put(db, &key_str.as_bytes(), &prefixed_value, WriteFlags::empty()) {
         Ok(_) => {
             txn.commit().map_err(|e| Error::Term(Box::new(e.to_string())))?;
+            // Force a sync to ensure data is persisted
+            lmdb_env.env.sync(true).map_err(|e| Error::Term(Box::new(e.to_string())))?;
+            
+            // Invalidate cache for this path
+            invalidate_path_cache(&key_str);
+            
             Ok(atoms::ok().encode(env))
         }
         Err(e) => Ok((atoms::error(), e.to_string()).encode(env)),
@@ -488,8 +500,9 @@ pub fn make_link<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, existing: Term<'
             Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
         };
         
-        // Resolve the existing path first to ensure we're not creating a link to a link
-        let resolved_existing = resolve_path(&lmdb_env, &existing_str);
+        // Don't resolve the existing path - we want to create a link to whatever is specified
+        // This allows creating chains of links like C -> B -> A
+        let resolved_existing = existing_str.clone();
         
         let mut txn = match lmdb_env.env.begin_rw_txn() {
             Ok(t) => t,
@@ -505,6 +518,10 @@ pub fn make_link<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, existing: Term<'
         match txn.put(db, &new_str.as_bytes(), &link_value.as_bytes(), WriteFlags::empty()) {
             Ok(_) => {
                 txn.commit().map_err(|e| Error::Term(Box::new(e.to_string())))?;
+                
+                // Invalidate cache when links change
+                invalidate_link_cache(&new_str);
+                
                 Ok(atoms::ok().encode(env))
             }
             Err(e) => Ok((atoms::error(), e.to_string()).encode(env)),
@@ -539,10 +556,7 @@ pub fn path<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, path: Term<'a>) -> Ni
         }
     };
     
-    // Resolve any links in the path
-    let resolved_path = resolve_path(&lmdb_env, &path_str);
-    
-    // Check if the resolved path exists
+    // Don't resolve links - just check what's actually stored at this path
     let db = match lmdb_env.get_or_create_db(None) {
         Ok(db) => db,
         Err(_) => return Ok(path_str.encode(env)),
@@ -553,19 +567,30 @@ pub fn path<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, path: Term<'a>) -> Ni
         Err(_) => return Ok(path_str.encode(env)),
     };
     
-    // Check if it exists as a value or group
-    if txn.get(db, &resolved_path.as_bytes()).is_ok() {
-        return Ok(resolved_path.encode(env));
+    // Check what's stored at this exact path
+    match txn.get(db, &path_str.as_bytes()) {
+        Ok(data) => {
+            // If it's a link, return the link target
+            if let Ok(value_str) = std::str::from_utf8(data) {
+                if value_str.starts_with("@link:") {
+                    let link_target = &value_str[6..];
+                    return Ok(link_target.encode(env));
+                }
+            }
+            // It exists with data, return the path
+            return Ok(path_str.encode(env));
+        },
+        Err(lmdb::Error::NotFound) => {
+            // Check if it exists as a group
+            let group_key = make_group_key(&path_str);
+            if txn.get(db, &group_key.as_bytes()).is_ok() {
+                return Ok(path_str.encode(env));
+            }
+            // Path doesn't exist
+            Ok(atoms::not_found().encode(env))
+        },
+        Err(_) => Ok(atoms::not_found().encode(env)),
     }
-    
-    // Check if it exists as a group
-    let group_key = make_group_key(&resolved_path);
-    if txn.get(db, &group_key.as_bytes()).is_ok() {
-        return Ok(resolved_path.encode(env));
-    }
-    
-    // Path doesn't exist
-    Ok(atoms::not_found().encode(env))
 }
 
 pub fn add_path<'a>(env: RustlerEnv<'a>, _store_opts: Term<'a>, path1: Term<'a>, path2: Term<'a>) -> NifResult<Term<'a>> {
@@ -789,11 +814,6 @@ pub fn list_prefix<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, prefix: Term<'
 // Helper functions
 
 fn resolve_path(lmdb_env: &Arc<LmdbEnvironment>, path: &str) -> String {
-    let mut visited = HashSet::new();
-    resolve_path_recursive(lmdb_env, path, &mut visited)
-}
-
-fn resolve_path_recursive(lmdb_env: &Arc<LmdbEnvironment>, path: &str, visited: &mut HashSet<String>) -> String {
     let db = match lmdb_env.get_or_create_db(None) {
         Ok(db) => db,
         Err(_) => return path.to_string(),
@@ -804,6 +824,11 @@ fn resolve_path_recursive(lmdb_env: &Arc<LmdbEnvironment>, path: &str, visited: 
         Err(_) => return path.to_string(),
     };
     
+    let mut visited = HashSet::new();
+    resolve_path_with_txn(&txn, db, path, &mut visited)
+}
+
+fn resolve_path_with_txn(txn: &lmdb::RoTransaction, db: lmdb::Database, path: &str, visited: &mut HashSet<String>) -> String {
     // Split path into segments
     let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
     if segments.is_empty() {
@@ -824,6 +849,7 @@ fn resolve_path_recursive(lmdb_env: &Arc<LmdbEnvironment>, path: &str, visited: 
         // Check if current path is a link
         match txn.get(db, &current_base.as_bytes()) {
             Ok(value) => {
+                // Found a value, check if it's a link
                 if let Ok(value_str) = std::str::from_utf8(value) {
                     if value_str.starts_with("@link:") {
                         // Prevent circular references
@@ -846,15 +872,15 @@ fn resolve_path_recursive(lmdb_env: &Arc<LmdbEnvironment>, path: &str, visited: 
                             };
                             
                             // Recursively resolve the combined path
-                            return resolve_path_recursive(lmdb_env, &combined_path, visited);
+                            return resolve_path_with_txn(txn, db, &combined_path, visited);
                         } else {
                             // This was the last segment, just resolve the link target
-                            return resolve_path_recursive(lmdb_env, link_target, visited);
+                            return resolve_path_with_txn(txn, db, link_target, visited);
                         }
                     }
                 }
             }
-            Err(_) => {
+            Err(e) => {
                 // Path segment doesn't exist as a key, continue
             }
         }
@@ -887,4 +913,28 @@ fn ensure_parent_groups(
     }
     
     Ok(())
+}
+
+pub fn sync<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>) -> NifResult<Term<'a>> {
+    // Try to decode store_opts as an environment resource first
+    let lmdb_env = if let Ok(resource) = store_opts.decode::<ResourceArc<EnvironmentResource>>() {
+        resource.0.clone()
+    } else {
+        // Fall back to parsing store_opts and looking up by name
+        let opts = parse_store_opts(store_opts)?;
+        let name = opts.get("name")
+            .ok_or(Error::BadArg)?;
+        
+        // Get the canonical key for environment lookup
+        let key = get_canonical_key(name);
+        
+        let envs = ENVIRONMENTS.read();
+        envs.get(&key).cloned().ok_or(Error::BadArg)?
+    };
+    
+    // Force a full sync of the environment
+    match lmdb_env.env.sync(true) {
+        Ok(_) => Ok(atoms::ok().encode(env)),
+        Err(e) => Ok((atoms::error(), e.to_string()).encode(env)),
+    }
 }

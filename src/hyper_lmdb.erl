@@ -28,7 +28,10 @@
 
 %% Extended API
 -export([list_prefix/2, list_prefix/3]).
--export([scope/1]).
+-export([scope/1, sync/1]).
+
+%% Batch operations
+-export([begin_batch/1, batch_write/3, batch_make_group/2, batch_make_link/3, commit_batch/1]).
 
 %% Direct LMDB environment functions removed - use store API instead
 
@@ -175,6 +178,75 @@ resolve(StoreOpts, Path) ->
         {error, _} -> not_found
     end.
 
+%% @doc Force a sync of the LMDB environment to disk.
+%% This ensures all pending transactions are fully persisted.
+%% @param StoreOpts Database configuration map
+%% @returns ok | {error, Reason}
+-spec sync(map()) -> ok | {error, any()}.
+sync(StoreOpts) ->
+    case nif_sync(StoreOpts) of
+        ok -> ok;
+        {error, Reason} -> {error, Reason}
+    end.
+
+%%% Batch operations for atomic multi-operation transactions
+
+%% @doc Begin a new batch transaction.
+%% All operations within the batch will be executed atomically.
+%% @param StoreOpts Database configuration map
+%% @returns {ok, BatchRef} | {error, Reason}
+-spec begin_batch(map()) -> {ok, reference()} | {error, any()}.
+begin_batch(StoreOpts) ->
+    nif_begin_batch(StoreOpts).
+
+%% @doc Add a write operation to a batch.
+%% @param BatchRef Batch transaction reference
+%% @param Key The key to write
+%% @param Value The value to write
+%% @returns ok | {error, Reason}
+-spec batch_write(reference(), binary() | list(), binary()) -> ok | {error, any()}.
+batch_write(BatchRef, Key, Value) when is_binary(Value) ->
+    case nif_batch_write(BatchRef, normalize_key(Key), Value) of
+        ok -> ok;
+        {error, Reason} -> {error, Reason}
+    end;
+batch_write(BatchRef, Key, Value) ->
+    batch_write(BatchRef, Key, term_to_binary(Value)).
+
+%% @doc Add a make_group operation to a batch.
+%% @param BatchRef Batch transaction reference
+%% @param Path The group path to create
+%% @returns ok | {error, Reason}
+-spec batch_make_group(reference(), binary() | list()) -> ok | {error, any()}.
+batch_make_group(BatchRef, Path) ->
+    case nif_batch_make_group(BatchRef, normalize_key(Path)) of
+        ok -> ok;
+        {error, Reason} -> {error, Reason}
+    end.
+
+%% @doc Add a make_link operation to a batch.
+%% @param BatchRef Batch transaction reference
+%% @param Existing The existing path to link from
+%% @param New The new link path
+%% @returns ok | {error, Reason}
+-spec batch_make_link(reference(), binary() | list(), binary() | list()) -> ok | {error, any()}.
+batch_make_link(BatchRef, Existing, New) ->
+    case nif_batch_make_link(BatchRef, normalize_key(Existing), normalize_key(New)) of
+        ok -> ok;
+        {error, Reason} -> {error, Reason}
+    end.
+
+%% @doc Commit a batch transaction.
+%% Executes all operations in the batch atomically.
+%% @param BatchRef Batch transaction reference
+%% @returns ok | {error, Reason}
+-spec commit_batch(reference()) -> ok | {error, any()}.
+commit_batch(BatchRef) ->
+    case nif_commit_batch(BatchRef) of
+        ok -> ok;
+        {error, Reason} -> {error, Reason}
+    end.
+
 %%% Helper functions
 
 %% @doc Normalize a key to ensure consistent format.
@@ -226,6 +298,24 @@ nif_resolve(_StoreOpts, _Path) ->
     erlang:nif_error(nif_not_loaded).
 
 nif_list_prefix(_StoreOpts, _Prefix, _Opts) ->
+    erlang:nif_error(nif_not_loaded).
+
+nif_sync(_StoreOpts) ->
+    erlang:nif_error(nif_not_loaded).
+
+nif_begin_batch(_StoreOpts) ->
+    erlang:nif_error(nif_not_loaded).
+
+nif_batch_write(_BatchRef, _Key, _Value) ->
+    erlang:nif_error(nif_not_loaded).
+
+nif_batch_make_group(_BatchRef, _Path) ->
+    erlang:nif_error(nif_not_loaded).
+
+nif_batch_make_link(_BatchRef, _Existing, _New) ->
+    erlang:nif_error(nif_not_loaded).
+
+nif_commit_batch(_BatchRef) ->
     erlang:nif_error(nif_not_loaded).
 
 %% Direct environment NIFs removed - use store API instead
