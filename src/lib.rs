@@ -41,97 +41,97 @@ fn on_load(env: Env, _info: Term) -> bool {
     environment::on_load(env) && batch::on_load(env)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_start<'a>(env: Env<'a>, store_opts: Term<'a>) -> NifResult<Term<'a>> {
     store::start(env, store_opts)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_stop<'a>(env: Env<'a>, store_opts: Term<'a>) -> NifResult<Term<'a>> {
     store::stop(env, store_opts)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_reset<'a>(env: Env<'a>, store_opts: Term<'a>) -> NifResult<Term<'a>> {
     store::reset(env, store_opts)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_read<'a>(env: Env<'a>, store_opts: Term<'a>, key: Term<'a>) -> NifResult<Term<'a>> {
     store::read(env, store_opts, key)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_write<'a>(env: Env<'a>, store_opts: Term<'a>, key: Term<'a>, value: Term<'a>) -> NifResult<Term<'a>> {
     store::write(env, store_opts, key, value)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_type<'a>(env: Env<'a>, store_opts: Term<'a>, key: Term<'a>) -> NifResult<Term<'a>> {
     store::get_type(env, store_opts, key)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_list<'a>(env: Env<'a>, store_opts: Term<'a>, path: Term<'a>) -> NifResult<Term<'a>> {
     store::list(env, store_opts, path)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_make_group<'a>(env: Env<'a>, store_opts: Term<'a>, path: Term<'a>) -> NifResult<Term<'a>> {
     store::make_group(env, store_opts, path)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_make_link<'a>(env: Env<'a>, store_opts: Term<'a>, existing: Term<'a>, new: Term<'a>) -> NifResult<Term<'a>> {
     store::make_link(env, store_opts, existing, new)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_path<'a>(env: Env<'a>, store_opts: Term<'a>, path: Term<'a>) -> NifResult<Term<'a>> {
     store::path(env, store_opts, path)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_add_path<'a>(env: Env<'a>, store_opts: Term<'a>, path1: Term<'a>, path2: Term<'a>) -> NifResult<Term<'a>> {
     store::add_path(env, store_opts, path1, path2)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_resolve<'a>(env: Env<'a>, store_opts: Term<'a>, path: Term<'a>) -> NifResult<Term<'a>> {
     store::resolve(env, store_opts, path)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_list_prefix<'a>(env: Env<'a>, store_opts: Term<'a>, prefix: Term<'a>, opts: Term<'a>) -> NifResult<Term<'a>> {
     store::list_prefix(env, store_opts, prefix, opts)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_sync<'a>(env: Env<'a>, store_opts: Term<'a>) -> NifResult<Term<'a>> {
     store::sync(env, store_opts)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_begin_batch<'a>(env: Env<'a>, store_opts: Term<'a>) -> NifResult<Term<'a>> {
     batch::begin_batch(env, store_opts)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_batch_write<'a>(env: Env<'a>, batch: Term<'a>, key: Term<'a>, value: Term<'a>) -> NifResult<Term<'a>> {
     batch::batch_write(env, batch, key, value)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_batch_make_group<'a>(env: Env<'a>, batch: Term<'a>, path: Term<'a>) -> NifResult<Term<'a>> {
     batch::batch_make_group(env, batch, path)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_batch_make_link<'a>(env: Env<'a>, batch: Term<'a>, existing: Term<'a>, new: Term<'a>) -> NifResult<Term<'a>> {
     batch::batch_make_link(env, batch, existing, new)
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyIo")]
 fn nif_commit_batch<'a>(env: Env<'a>, batch: Term<'a>) -> NifResult<Term<'a>> {
     batch::commit_batch(env, batch)
 }
