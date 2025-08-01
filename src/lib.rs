@@ -8,6 +8,7 @@ mod cursor;
 mod error;
 mod path_ops;
 mod store;
+mod store_fast;
 mod batch;
 mod cache;
 
@@ -33,7 +34,10 @@ rustler::init!(
         nif_batch_write,
         nif_batch_make_group,
         nif_batch_make_link,
-        nif_commit_batch
+        nif_commit_batch,
+        nif_read_fast,
+        nif_write_fast,
+        nif_read_many_fast
     ],
     load = on_load
 );
@@ -140,6 +144,22 @@ fn nif_batch_make_link<'a>(env: Env<'a>, batch: Term<'a>, existing: Term<'a>, ne
 #[rustler::nif]
 fn nif_commit_batch<'a>(env: Env<'a>, batch: Term<'a>) -> NifResult<Term<'a>> {
     batch::commit_batch(env, batch)
+}
+
+// Fast path NIFs for maximum performance
+#[rustler::nif]
+fn nif_read_fast<'a>(env: Env<'a>, store_opts: Term<'a>, key: Term<'a>) -> NifResult<Term<'a>> {
+    store_fast::read_fast(env, store_opts, key)
+}
+
+#[rustler::nif]
+fn nif_write_fast<'a>(env: Env<'a>, store_opts: Term<'a>, key: Term<'a>, value: Term<'a>) -> NifResult<Term<'a>> {
+    store_fast::write_fast(env, store_opts, key, value)
+}
+
+#[rustler::nif]
+fn nif_read_many_fast<'a>(env: Env<'a>, store_opts: Term<'a>, keys: Term<'a>) -> NifResult<Term<'a>> {
+    store_fast::read_many_fast(env, store_opts, keys)
 }
 
 // Direct environment functions removed - use store API instead

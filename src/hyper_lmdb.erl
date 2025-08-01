@@ -30,6 +30,9 @@
 -export([list_prefix/2, list_prefix/3, read_many/2]).
 -export([scope/1, sync/1]).
 
+%% Fast path API (no link resolution, no parent group creation)
+-export([read_fast/2, write_fast/3, read_many_fast/2]).
+
 %% Batch operations
 -export([begin_batch/1, batch_write/3, batch_make_group/2, batch_make_link/3, commit_batch/1]).
 
@@ -259,6 +262,44 @@ read_many(StoreOpts, Keys) ->
         {error, Reason} -> {error, Reason}
     end.
 
+%% @doc Fast read operation without link resolution or caching.
+%% This is the highest performance read path for simple key-value access.
+%% @param StoreOpts Database configuration map
+%% @param Key The key to read (must be binary)
+%% @returns {ok, Value} | not_found | {error, Reason}
+-spec read_fast(map(), binary()) -> {ok, binary()} | not_found | {error, any()}.
+read_fast(StoreOpts, Key) when is_binary(Key) ->
+    case nif_read_fast(StoreOpts, Key) of
+        {ok, Value} -> {ok, Value};
+        not_found -> not_found;
+        {error, Reason} -> {error, Reason}
+    end.
+
+%% @doc Fast write operation without parent group creation or sync.
+%% This is the highest performance write path for simple key-value storage.
+%% @param StoreOpts Database configuration map
+%% @param Key The key to write (must be binary)
+%% @param Value The value to write (must be binary)
+%% @returns ok | {error, Reason}
+-spec write_fast(map(), binary(), binary()) -> ok | {error, any()}.
+write_fast(StoreOpts, Key, Value) when is_binary(Key), is_binary(Value) ->
+    case nif_write_fast(StoreOpts, Key, Value) of
+        ok -> ok;
+        error -> {error, write_failed};
+        {error, Reason} -> {error, Reason}
+    end.
+
+%% @doc Fast bulk read operation without link resolution.
+%% @param StoreOpts Database configuration map
+%% @param Keys List of binary keys to read
+%% @returns {ok, [{Key, {ok, Value}} | {Key, not_found}]} | {error, Reason}
+-spec read_many_fast(map(), [binary()]) -> {ok, list()} | {error, any()}.
+read_many_fast(StoreOpts, Keys) when is_list(Keys) ->
+    case nif_read_many_fast(StoreOpts, Keys) of
+        {ok, Results} -> {ok, Results};
+        {error, Reason} -> {error, Reason}
+    end.
+
 %%% Helper functions
 
 %% @doc Normalize a key to ensure consistent format.
@@ -331,6 +372,15 @@ nif_batch_make_link(_BatchRef, _Existing, _New) ->
     erlang:nif_error(nif_not_loaded).
 
 nif_commit_batch(_BatchRef) ->
+    erlang:nif_error(nif_not_loaded).
+
+nif_read_fast(_StoreOpts, _Key) ->
+    erlang:nif_error(nif_not_loaded).
+
+nif_write_fast(_StoreOpts, _Key, _Value) ->
+    erlang:nif_error(nif_not_loaded).
+
+nif_read_many_fast(_StoreOpts, _Keys) ->
     erlang:nif_error(nif_not_loaded).
 
 %% Direct environment NIFs removed - use store API instead

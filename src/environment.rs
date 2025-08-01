@@ -17,7 +17,7 @@ impl LmdbEnvironment {
         std::fs::create_dir_all(path)?;
         
         let env = Environment::new()
-            .set_flags(EnvironmentFlags::WRITE_MAP | EnvironmentFlags::MAP_ASYNC)
+            .set_flags(EnvironmentFlags::WRITE_MAP | EnvironmentFlags::MAP_ASYNC | EnvironmentFlags::NO_SYNC | EnvironmentFlags::NO_META_SYNC | EnvironmentFlags::NO_READAHEAD)
             .set_map_size(map_size)
             .set_max_dbs(max_dbs)
             .set_max_readers(max_readers)

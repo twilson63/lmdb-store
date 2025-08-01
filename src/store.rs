@@ -334,8 +334,8 @@ pub fn write<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>, value
     match txn.put(db, &key_str.as_bytes(), &prefixed_value, WriteFlags::empty()) {
         Ok(_) => {
             txn.commit().map_err(|e| Error::Term(Box::new(e.to_string())))?;
-            // Force a sync to ensure data is persisted
-            lmdb_env.env.sync(true).map_err(|e| Error::Term(Box::new(e.to_string())))?;
+            // NO_SYNC flag is set, so we don't force sync on every write
+            // Users can call sync() explicitly when needed
             
             // Invalidate cache for this path
             invalidate_path_cache(&key_str);
