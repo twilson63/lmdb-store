@@ -27,6 +27,7 @@ rustler::init!(
         nif_add_path,
         nif_resolve,
         nif_list_prefix,
+        nif_read_many,
         nif_sync,
         nif_begin_batch,
         nif_batch_write,
@@ -104,6 +105,11 @@ fn nif_resolve<'a>(env: Env<'a>, store_opts: Term<'a>, path: Term<'a>) -> NifRes
 #[rustler::nif]
 fn nif_list_prefix<'a>(env: Env<'a>, store_opts: Term<'a>, prefix: Term<'a>, opts: Term<'a>) -> NifResult<Term<'a>> {
     store::list_prefix(env, store_opts, prefix, opts)
+}
+
+#[rustler::nif]
+fn nif_read_many<'a>(env: Env<'a>, store_opts: Term<'a>, keys: Term<'a>) -> NifResult<Term<'a>> {
+    store::read_many(env, store_opts, keys)
 }
 
 #[rustler::nif]

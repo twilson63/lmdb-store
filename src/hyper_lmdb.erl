@@ -27,7 +27,7 @@
 -export([path/2, add_path/3, resolve/2]).
 
 %% Extended API
--export([list_prefix/2, list_prefix/3]).
+-export([list_prefix/2, list_prefix/3, read_many/2]).
 -export([scope/1, sync/1]).
 
 %% Batch operations
@@ -247,6 +247,18 @@ commit_batch(BatchRef) ->
         {error, Reason} -> {error, Reason}
     end.
 
+%% @doc Read multiple keys in a single transaction for better performance.
+%% @param StoreOpts Database configuration map
+%% @param Keys List of keys to read
+%% @returns {ok, [{Key, {ok, Value}} | {Key, not_found} | {Key, {error, Reason}}]}
+-spec read_many(map(), [binary() | list()]) -> {ok, list()} | {error, any()}.
+read_many(StoreOpts, Keys) ->
+    NormalizedKeys = [normalize_key(Key) || Key <- Keys],
+    case nif_read_many(StoreOpts, NormalizedKeys) of
+        {ok, Results} -> {ok, Results};
+        {error, Reason} -> {error, Reason}
+    end.
+
 %%% Helper functions
 
 %% @doc Normalize a key to ensure consistent format.
@@ -301,6 +313,9 @@ nif_list_prefix(_StoreOpts, _Prefix, _Opts) ->
     erlang:nif_error(nif_not_loaded).
 
 nif_sync(_StoreOpts) ->
+    erlang:nif_error(nif_not_loaded).
+
+nif_read_many(_StoreOpts, _Keys) ->
     erlang:nif_error(nif_not_loaded).
 
 nif_begin_batch(_StoreOpts) ->

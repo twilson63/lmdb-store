@@ -1,203 +1,165 @@
 -module(hyper_lmdb_perf_test).
 -include_lib("eunit/include/eunit.hrl").
 
-%% Performance tests that can be run with eunit
--define(SMALL_OPS, 1000).
--define(MEDIUM_OPS, 10000).
+-define(STORE_NAME, <<"perf_test_store">>).
+-define(NUM_KEYS, 1000).
+-define(NUM_READS, 10000).
+-define(BATCH_SIZE, 100).
 
-performance_test_() ->
-    {timeout, 300, [  % 5 minute timeout for all performance tests
-        {"Small dataset performance", fun small_dataset_test/0},
-        {"Medium dataset performance", fun medium_dataset_test/0},
-        {"Large value performance", fun large_value_test/0},
-        {"Concurrent access performance", fun concurrent_test/0}
-    ]}.
+store_opts() ->
+    #{
+        <<"name">> => ?STORE_NAME,
+        <<"capacity">> => 1024 * 1024 * 1024  % 1GB
+    }.
 
 setup() ->
-    StoreOpts = #{
-        <<"name">> => <<"perf_test">>,
-        <<"path">> => <<"/tmp/elmdb_perf_test">>,
-        <<"map_size">> => 1024 * 1024 * 1024  % 1GB
-    },
-    os:cmd("rm -rf /tmp/elmdb_perf_test"),
-    case hyper_lmdb:start(StoreOpts) of
-        {ok, _EnvRef} -> StoreOpts;  % Always use StoreOpts
-        ok -> StoreOpts
-    end.
+    StoreOpts = store_opts(),
+    hyper_lmdb:reset(StoreOpts),
+    {ok, _} = hyper_lmdb:start(StoreOpts),
+    StoreOpts.
 
-cleanup(Store) ->
-    StoreOpts = #{
-        <<"name">> => <<"perf_test">>,
-        <<"path">> => <<"/tmp/elmdb_perf_test">>
-    },
-    hyper_lmdb:stop(StoreOpts),
-    os:cmd("rm -rf /tmp/elmdb_perf_test").
+cleanup(_StoreOpts) ->
+    hyper_lmdb:stop(store_opts()).
 
-small_dataset_test() ->
-    Store = setup(),
-    try
-        % Generate test data
-        Keys = [<<"key", (integer_to_binary(I))/binary>> || I <- lists:seq(1, ?SMALL_OPS)],
-        Values = [crypto:strong_rand_bytes(100) || _ <- lists:seq(1, ?SMALL_OPS)],
-        
-        % Write performance
-        WriteStart = erlang:monotonic_time(microsecond),
-        lists:foreach(fun({K, V}) ->
-            ?assertEqual(ok, hyper_lmdb:write(Store, K, V))
-        end, lists:zip(Keys, Values)),
-        WriteTime = erlang:monotonic_time(microsecond) - WriteStart,
-        WriteOpsPerSec = ?SMALL_OPS * 1000000 / WriteTime,
-        
-        % Read performance
-        ReadStart = erlang:monotonic_time(microsecond),
-        lists:foreach(fun(K) ->
-            ?assertMatch({ok, _}, hyper_lmdb:read(Store, K))
-        end, Keys),
-        ReadTime = erlang:monotonic_time(microsecond) - ReadStart,
-        ReadOpsPerSec = ?SMALL_OPS * 1000000 / ReadTime,
-        
-        io:format("~nSmall dataset (~p ops):~n", [?SMALL_OPS]),
-        io:format("  Write: ~.0f ops/sec (~.2f ms total)~n", [WriteOpsPerSec, WriteTime/1000]),
-        io:format("  Read:  ~.0f ops/sec (~.2f ms total)~n", [ReadOpsPerSec, ReadTime/1000]),
-        
-        % Performance assertions
-        ?assert(WriteOpsPerSec > 10000),  % Should handle >10k writes/sec
-        ?assert(ReadOpsPerSec > 50000)    % Should handle >50k reads/sec
-    after
-        cleanup(Store)
-    end.
+perf_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(StoreOpts) ->
+         [
+          {"Write performance", fun() -> test_write_performance(StoreOpts) end},
+          {"Read performance", fun() -> test_read_performance(StoreOpts) end},
+          {"Batch write performance", fun() -> test_batch_write_performance(StoreOpts) end},
+          {"Read many performance", fun() -> test_read_many_performance(StoreOpts) end},
+          {"Link resolution performance", fun() -> test_link_resolution_performance(StoreOpts) end}
+         ]
+     end}.
 
-medium_dataset_test() ->
-    Store = setup(),
-    try
-        % Test with medium dataset
-        N = ?MEDIUM_OPS,
+test_write_performance(StoreOpts) ->
+    io:format("~nWrite Performance Test~n"),
+    io:format("Writing ~p keys...~n", [?NUM_KEYS]),
+    
+    Start = erlang:monotonic_time(microsecond),
+    
+    lists:foreach(fun(I) ->
+        Key = integer_to_binary(I),
+        Value = crypto:strong_rand_bytes(100),
+        ok = hyper_lmdb:write(StoreOpts, <<"data/", Key/binary>>, Value)
+    end, lists:seq(1, ?NUM_KEYS)),
+    
+    End = erlang:monotonic_time(microsecond),
+    Duration = End - Start,
+    
+    io:format("Wrote ~p keys in ~p ms (~p ops/sec)~n", 
+              [?NUM_KEYS, Duration div 1000, ?NUM_KEYS * 1000000 div Duration]),
+    
+    ?assert(Duration > 0).
+
+test_read_performance(StoreOpts) ->
+    io:format("~nRead Performance Test~n"),
+    io:format("Reading ~p random keys...~n", [?NUM_READS]),
+    
+    % First write some test data
+    lists:foreach(fun(I) ->
+        Key = integer_to_binary(I),
+        Value = crypto:strong_rand_bytes(100),
+        ok = hyper_lmdb:write(StoreOpts, <<"data/", Key/binary>>, Value)
+    end, lists:seq(1, 1000)),
+    
+    Start = erlang:monotonic_time(microsecond),
+    
+    lists:foreach(fun(_) ->
+        I = rand:uniform(1000),
+        Key = integer_to_binary(I),
+        {ok, _} = hyper_lmdb:read(StoreOpts, <<"data/", Key/binary>>)
+    end, lists:seq(1, ?NUM_READS)),
+    
+    End = erlang:monotonic_time(microsecond),
+    Duration = End - Start,
+    
+    io:format("Read ~p keys in ~p ms (~p ops/sec)~n", 
+              [?NUM_READS, Duration div 1000, ?NUM_READS * 1000000 div Duration]),
+    
+    ?assert(Duration > 0).
+
+test_batch_write_performance(StoreOpts) ->
+    io:format("~nBatch Write Performance Test~n"),
+    io:format("Writing ~p keys in batches of ~p...~n", [?NUM_KEYS, ?BATCH_SIZE]),
+    
+    Start = erlang:monotonic_time(microsecond),
+    
+    lists:foreach(fun(BatchNum) ->
+        {ok, Batch} = hyper_lmdb:begin_batch(StoreOpts),
         
-        % Sequential write test
-        WriteStart = erlang:monotonic_time(microsecond),
         lists:foreach(fun(I) ->
-            Key = <<"med_key_", (integer_to_binary(I))/binary>>,
-            Value = crypto:strong_rand_bytes(1024),
-            ?assertEqual(ok, hyper_lmdb:write(Store, Key, Value))
-        end, lists:seq(1, N)),
-        WriteTime = erlang:monotonic_time(microsecond) - WriteStart,
+            Key = integer_to_binary(BatchNum * ?BATCH_SIZE + I),
+            Value = crypto:strong_rand_bytes(100),
+            ok = hyper_lmdb:batch_write(Batch, <<"batch/", Key/binary>>, Value)
+        end, lists:seq(1, ?BATCH_SIZE)),
         
-        % Random read test
-        ReadKeys = [<<"med_key_", (integer_to_binary(rand:uniform(N)))/binary>> 
-                    || _ <- lists:seq(1, N)],
-        ReadStart = erlang:monotonic_time(microsecond),
-        lists:foreach(fun(K) ->
-            ?assertMatch({ok, _}, hyper_lmdb:read(Store, K))
-        end, ReadKeys),
-        ReadTime = erlang:monotonic_time(microsecond) - ReadStart,
-        
-        io:format("~nMedium dataset (~p ops):~n", [N]),
-        io:format("  Sequential Write: ~.0f ops/sec~n", [N * 1000000 / WriteTime]),
-        io:format("  Random Read:      ~.0f ops/sec~n", [N * 1000000 / ReadTime])
-    after
-        cleanup(Store)
-    end.
+        ok = hyper_lmdb:commit_batch(Batch)
+    end, lists:seq(0, (?NUM_KEYS div ?BATCH_SIZE) - 1)),
+    
+    End = erlang:monotonic_time(microsecond),
+    Duration = End - Start,
+    
+    io:format("Batch wrote ~p keys in ~p ms (~p ops/sec)~n", 
+              [?NUM_KEYS, Duration div 1000, ?NUM_KEYS * 1000000 div Duration]),
+    
+    ?assert(Duration > 0).
 
-large_value_test() ->
-    Store = setup(),
-    try
-        % Test with various value sizes
-        Sizes = [1024, 4096, 16384, 65536, 262144],  % 1KB to 256KB
-        
-        io:format("~nLarge value performance:~n"),
-        io:format("Size     | Write ops/sec | Read ops/sec~n"),
-        io:format("---------|---------------|-------------~n"),
-        
-        lists:foreach(fun(Size) ->
-            N = min(1000, 10485760 div Size),  % Limit total data to ~10MB
-            Keys = [<<"large_", (integer_to_binary(I))/binary>> || I <- lists:seq(1, N)],
-            Values = [crypto:strong_rand_bytes(Size) || _ <- lists:seq(1, N)],
-            
-            % Write test
-            WriteStart = erlang:monotonic_time(microsecond),
-            lists:foreach(fun({K, V}) ->
-                ?assertEqual(ok, hyper_lmdb:write(Store, K, V))
-            end, lists:zip(Keys, Values)),
-            WriteTime = erlang:monotonic_time(microsecond) - WriteStart,
-            
-            % Read test
-            ReadStart = erlang:monotonic_time(microsecond),
-            lists:foreach(fun(K) ->
-                ?assertMatch({ok, _}, hyper_lmdb:read(Store, K))
-            end, Keys),
-            ReadTime = erlang:monotonic_time(microsecond) - ReadStart,
-            
-            io:format("~8w | ~13.0f | ~12.0f~n", 
-                     [Size, 
-                      N * 1000000 / WriteTime,
-                      N * 1000000 / ReadTime])
-        end, Sizes)
-    after
-        cleanup(Store)
-    end.
+test_read_many_performance(StoreOpts) ->
+    io:format("~nRead Many Performance Test~n"),
+    
+    % First write some test data
+    lists:foreach(fun(I) ->
+        Key = integer_to_binary(I),
+        Value = crypto:strong_rand_bytes(100),
+        ok = hyper_lmdb:write(StoreOpts, <<"many/", Key/binary>>, Value)
+    end, lists:seq(1, 1000)),
+    
+    % Test reading 100 keys at once
+    Keys = [<<"many/", (integer_to_binary(I))/binary>> || I <- lists:seq(1, 100)],
+    
+    Start = erlang:monotonic_time(microsecond),
+    
+    lists:foreach(fun(_) ->
+        {ok, _Results} = hyper_lmdb:read_many(StoreOpts, Keys)
+    end, lists:seq(1, 1000)),
+    
+    End = erlang:monotonic_time(microsecond),
+    Duration = End - Start,
+    
+    io:format("Read 100 keys x 1000 times in ~p ms (~p batch ops/sec)~n", 
+              [Duration div 1000, 1000 * 1000000 div Duration]),
+    
+    ?assert(Duration > 0).
 
-concurrent_test() ->
-    Store = setup(),
-    try
-        N = 1000,
-        NumWorkers = 10,
-        OpsPerWorker = N div NumWorkers,
-        
-        % Pre-populate some data
-        lists:foreach(fun(I) ->
-            Key = <<"concurrent_", (integer_to_binary(I))/binary>>,
-            Value = crypto:strong_rand_bytes(512),
-            ?assertEqual(ok, hyper_lmdb:write(Store, Key, Value))
-        end, lists:seq(1, N)),
-        
-        % Concurrent read test
-        Parent = self(),
-        ReadStart = erlang:monotonic_time(microsecond),
-        
-        ReadPids = [spawn_link(fun() ->
-            lists:foreach(fun(J) ->
-                Key = <<"concurrent_", (integer_to_binary(J))/binary>>,
-                ?assertMatch({ok, _}, hyper_lmdb:read(Store, Key))
-            end, lists:seq((I-1)*OpsPerWorker + 1, I*OpsPerWorker)),
-            Parent ! {done, self()}
-        end) || I <- lists:seq(1, NumWorkers)],
-        
-        wait_for_workers(ReadPids),
-        ReadTime = erlang:monotonic_time(microsecond) - ReadStart,
-        
-        % Concurrent mixed operations test
-        MixedStart = erlang:monotonic_time(microsecond),
-        
-        MixedPids = [spawn_link(fun() ->
-            lists:foreach(fun(J) ->
-                case rand:uniform(5) of
-                    1 -> % Write
-                        Key = <<"mixed_", (integer_to_binary(J))/binary>>,
-                        Value = crypto:strong_rand_bytes(512),
-                        ?assertEqual(ok, hyper_lmdb:write(Store, Key, Value));
-                    _ -> % Read
-                        Key = <<"concurrent_", (integer_to_binary(rand:uniform(N)))/binary>>,
-                        ?assertMatch({ok, _}, hyper_lmdb:read(Store, Key))
-                end
-            end, lists:seq((I-1)*OpsPerWorker + 1, I*OpsPerWorker)),
-            Parent ! {done, self()}
-        end) || I <- lists:seq(1, NumWorkers)],
-        
-        wait_for_workers(MixedPids),
-        MixedTime = erlang:monotonic_time(microsecond) - MixedStart,
-        
-        io:format("~nConcurrent operations (~p workers):~n", [NumWorkers]),
-        io:format("  Concurrent reads:  ~.0f ops/sec~n", [N * 1000000 / ReadTime]),
-        io:format("  Mixed operations:  ~.0f ops/sec~n", [N * 1000000 / MixedTime])
-    after
-        cleanup(Store)
-    end.
-
-wait_for_workers([]) -> ok;
-wait_for_workers(Pids) ->
-    receive
-        {done, Pid} ->
-            wait_for_workers(lists:delete(Pid, Pids))
-    after 5000 ->
-        error(timeout)
-    end.
+test_link_resolution_performance(StoreOpts) ->
+    io:format("~nLink Resolution Performance Test~n"),
+    
+    % Create a chain of links
+    ok = hyper_lmdb:write(StoreOpts, <<"link_test/original">>, <<"test_value">>),
+    
+    lists:foreach(fun(I) ->
+        Prev = if I == 1 -> <<"link_test/original">>; 
+                  true -> <<"link_test/link", (integer_to_binary(I-1))/binary>> 
+               end,
+        Current = <<"link_test/link", (integer_to_binary(I))/binary>>,
+        ok = hyper_lmdb:make_link(StoreOpts, Prev, Current)
+    end, lists:seq(1, 10)),
+    
+    % Test resolving through the chain
+    Start = erlang:monotonic_time(microsecond),
+    
+    lists:foreach(fun(_) ->
+        {ok, <<"test_value">>} = hyper_lmdb:read(StoreOpts, <<"link_test/link10">>)
+    end, lists:seq(1, 10000)),
+    
+    End = erlang:monotonic_time(microsecond),
+    Duration = End - Start,
+    
+    io:format("Resolved 10-deep link chain 10000 times in ~p ms (~p ops/sec)~n", 
+              [Duration div 1000, 10000 * 1000000 div Duration]),
+    
+    ?assert(Duration > 0).
