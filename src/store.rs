@@ -234,6 +234,11 @@ pub fn read<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>) -> Nif
         envs.get(&key).cloned().ok_or(Error::BadArg)?
     };
     
+    // Resolve any links in the path BEFORE starting the read transaction
+    // This ensures we get the most up-to-date view of links
+    let resolved_key = resolve_path(&lmdb_env, &key_str);
+    
+    
     let db = match lmdb_env.get_or_create_db(None) {
         Ok(db) => db,
         Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
@@ -244,16 +249,14 @@ pub fn read<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>) -> Nif
         Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
     };
     
-    // Resolve any links in the path
-    let resolved_key = resolve_path(&lmdb_env, &key_str);
-    
     match txn.get(db, &resolved_key.as_bytes()) {
         Ok(data) => {
             
             // Check for prefixes by looking at the raw bytes
             if data.starts_with(b"@link:") {
-                // If we still have a link after resolution, it means we hit a circular reference
-                // or a broken link chain
+                // This is a link - for now, just return not_found
+                // In the future, we might want to follow the link or return a special value
+                // But for compatibility with other stores, links themselves are not readable values
                 return Ok(atoms::not_found().encode(env));
             } else if data.starts_with(b"@data:") {
                 // Regular data - strip the prefix
@@ -828,6 +831,7 @@ fn resolve_path_recursive(lmdb_env: &Arc<LmdbEnvironment>, path: &str, visited: 
         // Check if current path is a link
         match txn.get(db, &current_base.as_bytes()) {
             Ok(value) => {
+                // Found a value, check if it's a link
                 if let Ok(value_str) = std::str::from_utf8(value) {
                     if value_str.starts_with("@link:") {
                         // Prevent circular references
@@ -858,7 +862,7 @@ fn resolve_path_recursive(lmdb_env: &Arc<LmdbEnvironment>, path: &str, visited: 
                     }
                 }
             }
-            Err(_) => {
+            Err(e) => {
                 // Path segment doesn't exist as a key, continue
             }
         }
