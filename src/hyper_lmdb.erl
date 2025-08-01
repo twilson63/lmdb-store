@@ -13,9 +13,25 @@
 %%% Configuration options:
 %%% - <<"name">> - Store instance name (required)
 %%% - <<"path">> - Directory path for LMDB files (default: "./lmdb/{name}")
-%%% - <<"map_size">> - Maximum database size in bytes (default: 10GB)
+%%% - <<"map_size">> or <<"capacity">> - Maximum database size in bytes (default: 10GB)
 %%% - <<"max_dbs">> - Maximum number of named databases (default: 128)
 %%% - <<"max_readers">> - Maximum concurrent readers (default: 126)
+%%%
+%%% Performance flags (all default to true for best performance):
+%%% - <<"no_sync">> - Don't sync after each transaction (default: true)
+%%%                   Set to false for maximum durability
+%%% - <<"map_async">> - Use asynchronous memory-mapped writes (default: true)
+%%% - <<"no_meta_sync">> - Don't sync metadata (default: true)
+%%% - <<"no_readahead">> - Disable OS readahead (default: true)
+%%% - <<"no_tls">> - Disable thread-local storage (default: false)
+%%% - <<"no_lock">> - Disable locking (single process only) (default: false)
+%%% - <<"read_only">> - Open in read-only mode (default: false)
+%%%
+%%% Example with custom flags for maximum durability:
+%%% #{<<"name">> => <<"mystore">>,
+%%%   <<"no_sync">> => false,       % Force sync on every write
+%%%   <<"map_async">> => false,      % Synchronous writes
+%%%   <<"no_meta_sync">> => false}   % Sync metadata too
 
 -module(hyper_lmdb).
 % -behavior(hb_store).

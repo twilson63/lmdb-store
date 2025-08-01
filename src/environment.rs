@@ -14,10 +14,27 @@ pub struct LmdbEnvironment {
 
 impl LmdbEnvironment {
     pub fn new(path: &Path, map_size: usize, max_dbs: u32, max_readers: u32) -> StoreResult<Self> {
+        Self::new_with_flags(path, map_size, max_dbs, max_readers, None)
+    }
+    
+    pub fn new_with_flags(
+        path: &Path, 
+        map_size: usize, 
+        max_dbs: u32, 
+        max_readers: u32,
+        custom_flags: Option<EnvironmentFlags>
+    ) -> StoreResult<Self> {
         std::fs::create_dir_all(path)?;
         
+        // Default flags for good performance
+        let default_flags = EnvironmentFlags::WRITE_MAP | EnvironmentFlags::MAP_ASYNC | 
+                           EnvironmentFlags::NO_SYNC | EnvironmentFlags::NO_META_SYNC | 
+                           EnvironmentFlags::NO_READAHEAD;
+        
+        let flags = custom_flags.unwrap_or(default_flags);
+        
         let env = Environment::new()
-            .set_flags(EnvironmentFlags::WRITE_MAP | EnvironmentFlags::MAP_ASYNC | EnvironmentFlags::NO_SYNC | EnvironmentFlags::NO_META_SYNC | EnvironmentFlags::NO_READAHEAD)
+            .set_flags(flags)
             .set_map_size(map_size)
             .set_max_dbs(max_dbs)
             .set_max_readers(max_readers)

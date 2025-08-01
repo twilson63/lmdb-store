@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use parking_lot::RwLock;
 use once_cell::sync::Lazy;
-use lmdb::{Transaction, Cursor, WriteFlags};
+use lmdb::{Transaction, Cursor, WriteFlags, EnvironmentFlags};
 
 use crate::atoms;
 use crate::environment::{LmdbEnvironment, EnvironmentResource};
@@ -66,17 +66,20 @@ pub(crate) fn parse_store_opts(term: Term) -> NifResult<HashMap<String, String>>
                 .to_string(),
             Err(_) => match value.decode::<String>() {
                 Ok(s) => s,
-                Err(_) => match value.decode::<i64>() {
-                    Ok(i) => i.to_string(),
-                    Err(_) => match value.decode::<u64>() {
-                        Ok(u) => u.to_string(),
-                        Err(_) => match value.decode::<rustler::Atom>() {
-                            Ok(atom) => {
-                                // Convert atom to string by getting its text representation
-                                // For now, we'll just use the atom name which works for module names
-                                format!("{:?}", atom)
+                Err(_) => match value.decode::<bool>() {
+                    Ok(b) => b.to_string(),
+                    Err(_) => match value.decode::<i64>() {
+                        Ok(i) => i.to_string(),
+                        Err(_) => match value.decode::<u64>() {
+                            Ok(u) => u.to_string(),
+                            Err(_) => match value.decode::<rustler::Atom>() {
+                                Ok(atom) => {
+                                    // Convert atom to string by getting its text representation
+                                    // For now, we'll just use the atom name which works for module names
+                                    format!("{:?}", atom)
+                                },
+                                Err(_) => return Err(Error::BadArg),
                             },
-                            Err(_) => return Err(Error::BadArg),
                         },
                     },
                 },
@@ -87,6 +90,45 @@ pub(crate) fn parse_store_opts(term: Term) -> NifResult<HashMap<String, String>>
     }
     
     Ok(opts)
+}
+
+// Helper to parse LMDB flags from store options
+pub(crate) fn parse_lmdb_flags(opts: &HashMap<String, String>) -> EnvironmentFlags {
+    let mut flags = EnvironmentFlags::empty();
+    
+    // Always use WRITE_MAP for performance
+    flags |= EnvironmentFlags::WRITE_MAP;
+    
+    // Parse individual flags from options
+    if opts.get("no_sync").map(|v| v == "true" || v == "1").unwrap_or(true) {
+        flags |= EnvironmentFlags::NO_SYNC;
+    }
+    
+    if opts.get("map_async").map(|v| v == "true" || v == "1").unwrap_or(true) {
+        flags |= EnvironmentFlags::MAP_ASYNC;
+    }
+    
+    if opts.get("no_meta_sync").map(|v| v == "true" || v == "1").unwrap_or(true) {
+        flags |= EnvironmentFlags::NO_META_SYNC;
+    }
+    
+    if opts.get("no_readahead").map(|v| v == "true" || v == "1").unwrap_or(true) {
+        flags |= EnvironmentFlags::NO_READAHEAD;
+    }
+    
+    if opts.get("no_tls").map(|v| v == "true" || v == "1").unwrap_or(false) {
+        flags |= EnvironmentFlags::NO_TLS;
+    }
+    
+    if opts.get("no_lock").map(|v| v == "true" || v == "1").unwrap_or(false) {
+        flags |= EnvironmentFlags::NO_LOCK;
+    }
+    
+    if opts.get("read_only").map(|v| v == "true" || v == "1").unwrap_or(false) {
+        flags |= EnvironmentFlags::READ_ONLY;
+    }
+    
+    flags
 }
 
 // Helper to decode path from Erlang term
@@ -154,8 +196,11 @@ pub fn start<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>) -> NifResult<Term<'a
         }
     }
     
-    // Create new environment
-    match LmdbEnvironment::new(&path, map_size, max_dbs, max_readers) {
+    // Parse LMDB flags from options
+    let flags = parse_lmdb_flags(&opts);
+    
+    // Create new environment with custom flags
+    match LmdbEnvironment::new_with_flags(&path, map_size, max_dbs, max_readers, Some(flags)) {
         Ok(lmdb_env) => {
             let arc_env = Arc::new(lmdb_env);
             
