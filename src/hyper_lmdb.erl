@@ -28,7 +28,7 @@
 
 %% Extended API
 -export([list_prefix/2, list_prefix/3]).
--export([scope/1]).
+-export([scope/1, sync/1]).
 
 %% Direct LMDB environment functions removed - use store API instead
 
@@ -175,6 +175,17 @@ resolve(StoreOpts, Path) ->
         {error, _} -> not_found
     end.
 
+%% @doc Force a sync of the LMDB environment to disk.
+%% This ensures all pending transactions are fully persisted.
+%% @param StoreOpts Database configuration map
+%% @returns ok | {error, Reason}
+-spec sync(map()) -> ok | {error, any()}.
+sync(StoreOpts) ->
+    case nif_sync(StoreOpts) of
+        ok -> ok;
+        {error, Reason} -> {error, Reason}
+    end.
+
 %%% Helper functions
 
 %% @doc Normalize a key to ensure consistent format.
@@ -226,6 +237,9 @@ nif_resolve(_StoreOpts, _Path) ->
     erlang:nif_error(nif_not_loaded).
 
 nif_list_prefix(_StoreOpts, _Prefix, _Opts) ->
+    erlang:nif_error(nif_not_loaded).
+
+nif_sync(_StoreOpts) ->
     erlang:nif_error(nif_not_loaded).
 
 %% Direct environment NIFs removed - use store API instead

@@ -892,3 +892,27 @@ fn ensure_parent_groups(
     
     Ok(())
 }
+
+pub fn sync<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>) -> NifResult<Term<'a>> {
+    // Try to decode store_opts as an environment resource first
+    let lmdb_env = if let Ok(resource) = store_opts.decode::<ResourceArc<EnvironmentResource>>() {
+        resource.0.clone()
+    } else {
+        // Fall back to parsing store_opts and looking up by name
+        let opts = parse_store_opts(store_opts)?;
+        let name = opts.get("name")
+            .ok_or(Error::BadArg)?;
+        
+        // Get the canonical key for environment lookup
+        let key = get_canonical_key(name);
+        
+        let envs = ENVIRONMENTS.read();
+        envs.get(&key).cloned().ok_or(Error::BadArg)?
+    };
+    
+    // Force a full sync of the environment
+    match lmdb_env.env.sync(true) {
+        Ok(_) => Ok(atoms::ok().encode(env)),
+        Err(e) => Ok((atoms::error(), e.to_string()).encode(env)),
+    }
+}

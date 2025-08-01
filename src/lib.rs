@@ -24,7 +24,8 @@ rustler::init!(
         nif_path,
         nif_add_path,
         nif_resolve,
-        nif_list_prefix
+        nif_list_prefix,
+        nif_sync
     ],
     load = on_load
 );
@@ -96,6 +97,11 @@ fn nif_resolve<'a>(env: Env<'a>, store_opts: Term<'a>, path: Term<'a>) -> NifRes
 #[rustler::nif]
 fn nif_list_prefix<'a>(env: Env<'a>, store_opts: Term<'a>, prefix: Term<'a>, opts: Term<'a>) -> NifResult<Term<'a>> {
     store::list_prefix(env, store_opts, prefix, opts)
+}
+
+#[rustler::nif]
+fn nif_sync<'a>(env: Env<'a>, store_opts: Term<'a>) -> NifResult<Term<'a>> {
+    store::sync(env, store_opts)
 }
 
 // Direct environment functions removed - use store API instead
