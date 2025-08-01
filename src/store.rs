@@ -249,23 +249,24 @@ pub fn read<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>) -> Nif
     
     match txn.get(db, &resolved_key.as_bytes()) {
         Ok(data) => {
-            if let Ok(data_str) = std::str::from_utf8(data) {
-                if data_str.starts_with("@link:") {
-                    // If we still have a link after resolution, it means we hit a circular reference
-                    // or a broken link chain
-                    return Ok(atoms::not_found().encode(env));
-                } else if data_str.starts_with("@data:") {
-                    // Regular data - strip the prefix
-                    let actual_data = &data[6..];
-                    let mut binary = rustler::OwnedBinary::new(actual_data.len()).unwrap();
-                    binary.as_mut_slice().copy_from_slice(actual_data);
-                    return Ok((atoms::ok(), binary.release(env)).encode(env));
-                }
+            
+            // Check for prefixes by looking at the raw bytes
+            if data.starts_with(b"@link:") {
+                // If we still have a link after resolution, it means we hit a circular reference
+                // or a broken link chain
+                return Ok(atoms::not_found().encode(env));
+            } else if data.starts_with(b"@data:") {
+                // Regular data - strip the prefix
+                let actual_data = &data[6..];
+                let mut binary = rustler::OwnedBinary::new(actual_data.len()).unwrap();
+                binary.as_mut_slice().copy_from_slice(actual_data);
+                return Ok((atoms::ok(), binary.release(env)).encode(env));
+            } else {
+                // Legacy data without prefix
+                let mut binary = rustler::OwnedBinary::new(data.len()).unwrap();
+                binary.as_mut_slice().copy_from_slice(data);
+                return Ok((atoms::ok(), binary.release(env)).encode(env));
             }
-            // Legacy data without prefix
-            let mut binary = rustler::OwnedBinary::new(data.len()).unwrap();
-            binary.as_mut_slice().copy_from_slice(data);
-            return Ok((atoms::ok(), binary.release(env)).encode(env));
         }
         Err(lmdb::Error::NotFound) => return Ok(atoms::not_found().encode(env)),
         Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
@@ -308,9 +309,12 @@ pub fn write<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>, value
     // Prefix the value with @data: to distinguish from links
     let prefixed_value = [b"@data:", value_bin.as_slice()].concat();
     
+    
     match txn.put(db, &key_str.as_bytes(), &prefixed_value, WriteFlags::empty()) {
         Ok(_) => {
             txn.commit().map_err(|e| Error::Term(Box::new(e.to_string())))?;
+            // Force a sync to ensure data is persisted
+            lmdb_env.env.sync(true).map_err(|e| Error::Term(Box::new(e.to_string())))?;
             Ok(atoms::ok().encode(env))
         }
         Err(e) => Ok((atoms::error(), e.to_string()).encode(env)),
