@@ -250,30 +250,47 @@ pub fn read<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>) -> Nif
         Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
     };
     
-    match txn.get(db, &resolved_key.as_bytes()) {
-        Ok(data) => {
-            
-            // Check for prefixes by looking at the raw bytes
-            if data.starts_with(b"@link:") {
-                // This is a link - for now, just return not_found
-                // In the future, we might want to follow the link or return a special value
-                // But for compatibility with other stores, links themselves are not readable values
-                return Ok(atoms::not_found().encode(env));
-            } else if data.starts_with(b"@data:") {
-                // Regular data - strip the prefix
-                let actual_data = &data[6..];
-                let mut binary = rustler::OwnedBinary::new(actual_data.len()).unwrap();
-                binary.as_mut_slice().copy_from_slice(actual_data);
-                return Ok((atoms::ok(), binary.release(env)).encode(env));
-            } else {
-                // Legacy data without prefix
-                let mut binary = rustler::OwnedBinary::new(data.len()).unwrap();
-                binary.as_mut_slice().copy_from_slice(data);
-                return Ok((atoms::ok(), binary.release(env)).encode(env));
+    // Follow links if we find them
+    let mut current_key = resolved_key;
+    let mut link_depth = 0;
+    const MAX_LINK_DEPTH: usize = 10;
+    
+    loop {
+        match txn.get(db, &current_key.as_bytes()) {
+            Ok(data) => {
+                // Check for prefixes by looking at the raw bytes
+                if data.starts_with(b"@link:") {
+                    // This is a link - follow it
+                    if link_depth >= MAX_LINK_DEPTH {
+                        // Too many links, possible circular reference
+                        return Ok(atoms::not_found().encode(env));
+                    }
+                    link_depth += 1;
+                    
+                    // Extract the link target
+                    if let Ok(link_str) = std::str::from_utf8(&data[6..]) {
+                        // Resolve any path components in the link target
+                        current_key = resolve_path(&lmdb_env, link_str);
+                        continue; // Try to read the link target
+                    } else {
+                        return Ok(atoms::not_found().encode(env));
+                    }
+                } else if data.starts_with(b"@data:") {
+                    // Regular data - strip the prefix
+                    let actual_data = &data[6..];
+                    let mut binary = rustler::OwnedBinary::new(actual_data.len()).unwrap();
+                    binary.as_mut_slice().copy_from_slice(actual_data);
+                    return Ok((atoms::ok(), binary.release(env)).encode(env));
+                } else {
+                    // Legacy data without prefix
+                    let mut binary = rustler::OwnedBinary::new(data.len()).unwrap();
+                    binary.as_mut_slice().copy_from_slice(data);
+                    return Ok((atoms::ok(), binary.release(env)).encode(env));
+                }
             }
+            Err(lmdb::Error::NotFound) => return Ok(atoms::not_found().encode(env)),
+            Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
         }
-        Err(lmdb::Error::NotFound) => return Ok(atoms::not_found().encode(env)),
-        Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
     }
 }
 
@@ -352,21 +369,62 @@ pub fn get_type<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, key: Term<'a>) ->
             Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
         };
         
-        // Resolve any links in the path
-        let resolved_key = resolve_path(&lmdb_env, &key_str);
+        // First check if the key itself exists and follow links
+        let mut current_key = key_str.clone();
+        let mut link_depth = 0;
+        const MAX_LINK_DEPTH: usize = 10;
         
-        // Check if it's a group
-        let group_key = make_group_key(&resolved_key);
-        if txn.get(db, &group_key.as_bytes()).is_ok() {
-            return Ok((atoms::ok(), atoms::composite()).encode(env));
+        loop {
+            match txn.get(db, &current_key.as_bytes()) {
+                Ok(data) => {
+                    if data.starts_with(b"@link:") {
+                        // This is a link - follow it
+                        if link_depth >= MAX_LINK_DEPTH {
+                            // Too many links, possible circular reference
+                            return Ok(atoms::not_found().encode(env));
+                        }
+                        link_depth += 1;
+                        
+                        // Extract the link target
+                        if let Ok(link_str) = std::str::from_utf8(&data[6..]) {
+                            // Resolve any path components in the link target
+                            current_key = resolve_path(&lmdb_env, link_str);
+                            continue; // Check the link target
+                        } else {
+                            return Ok(atoms::not_found().encode(env));
+                        }
+                    } else {
+                        // Found a value (with or without @data: prefix)
+                        // Now check if it's a group
+                        let group_key = make_group_key(&current_key);
+                        if txn.get(db, &group_key.as_bytes()).is_ok() {
+                            return Ok((atoms::ok(), atoms::composite()).encode(env));
+                        } else {
+                            return Ok((atoms::ok(), atoms::simple()).encode(env));
+                        }
+                    }
+                }
+                Err(_) => {
+                    // Key not found, check if it's a group
+                    let group_key = make_group_key(&current_key);
+                    if txn.get(db, &group_key.as_bytes()).is_ok() {
+                        return Ok((atoms::ok(), atoms::composite()).encode(env));
+                    }
+                    
+                    // Try resolving path segments
+                    let resolved_key = resolve_path(&lmdb_env, &current_key);
+                    if resolved_key != current_key {
+                        current_key = resolved_key;
+                        // Check if resolved path is a group
+                        let group_key = make_group_key(&current_key);
+                        if txn.get(db, &group_key.as_bytes()).is_ok() {
+                            return Ok((atoms::ok(), atoms::composite()).encode(env));
+                        }
+                    }
+                    return Ok(atoms::not_found().encode(env));
+                }
+            }
         }
-        
-        // Check if it's a simple value
-        if txn.get(db, &resolved_key.as_bytes()).is_ok() {
-            return Ok((atoms::ok(), atoms::simple()).encode(env));
-        }
-        
-        Ok(atoms::not_found().encode(env))
     } else {
         Ok(atoms::not_found().encode(env))
     }
@@ -395,8 +453,22 @@ pub fn list<'a>(env: RustlerEnv<'a>, store_opts: Term<'a>, path: Term<'a>) -> Ni
             Err(e) => return Ok((atoms::error(), e.to_string()).encode(env)),
         };
         
-        // Resolve any links in the path
-        let resolved_path = resolve_path(&lmdb_env, &path_str);
+        // First check if the path itself is a link
+        let mut resolved_path = path_str.clone();
+        match txn.get(db, &resolved_path.as_bytes()) {
+            Ok(data) => {
+                if data.starts_with(b"@link:") {
+                    // This is a link, follow it
+                    if let Ok(link_str) = std::str::from_utf8(&data[6..]) {
+                        resolved_path = link_str.to_string();
+                    }
+                }
+            }
+            _ => {}
+        }
+        
+        // Now resolve any links in the path segments
+        resolved_path = resolve_path(&lmdb_env, &resolved_path);
         
         // Check if path is a group
         let group_key = make_group_key(&resolved_path);
