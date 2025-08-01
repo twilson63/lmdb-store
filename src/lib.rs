@@ -8,6 +8,8 @@ mod cursor;
 mod error;
 mod path_ops;
 mod store;
+mod batch;
+mod cache;
 
 rustler::init!(
     "hyper_lmdb",
@@ -25,13 +27,18 @@ rustler::init!(
         nif_add_path,
         nif_resolve,
         nif_list_prefix,
-        nif_sync
+        nif_sync,
+        nif_begin_batch,
+        nif_batch_write,
+        nif_batch_make_group,
+        nif_batch_make_link,
+        nif_commit_batch
     ],
     load = on_load
 );
 
 fn on_load(env: Env, _info: Term) -> bool {
-    environment::on_load(env)
+    environment::on_load(env) && batch::on_load(env)
 }
 
 #[rustler::nif]
@@ -102,6 +109,31 @@ fn nif_list_prefix<'a>(env: Env<'a>, store_opts: Term<'a>, prefix: Term<'a>, opt
 #[rustler::nif]
 fn nif_sync<'a>(env: Env<'a>, store_opts: Term<'a>) -> NifResult<Term<'a>> {
     store::sync(env, store_opts)
+}
+
+#[rustler::nif]
+fn nif_begin_batch<'a>(env: Env<'a>, store_opts: Term<'a>) -> NifResult<Term<'a>> {
+    batch::begin_batch(env, store_opts)
+}
+
+#[rustler::nif]
+fn nif_batch_write<'a>(env: Env<'a>, batch: Term<'a>, key: Term<'a>, value: Term<'a>) -> NifResult<Term<'a>> {
+    batch::batch_write(env, batch, key, value)
+}
+
+#[rustler::nif]
+fn nif_batch_make_group<'a>(env: Env<'a>, batch: Term<'a>, path: Term<'a>) -> NifResult<Term<'a>> {
+    batch::batch_make_group(env, batch, path)
+}
+
+#[rustler::nif]
+fn nif_batch_make_link<'a>(env: Env<'a>, batch: Term<'a>, existing: Term<'a>, new: Term<'a>) -> NifResult<Term<'a>> {
+    batch::batch_make_link(env, batch, existing, new)
+}
+
+#[rustler::nif]
+fn nif_commit_batch<'a>(env: Env<'a>, batch: Term<'a>) -> NifResult<Term<'a>> {
+    batch::commit_batch(env, batch)
 }
 
 // Direct environment functions removed - use store API instead
